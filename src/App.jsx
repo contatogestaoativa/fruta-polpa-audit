@@ -239,8 +239,8 @@ export default function App() {
       }}>
         <div style={{ flexShrink: 0 }}><Logo T={T} height={32} /></div>
 
-        <div style={{ display: "flex", justifyContent: "center", overflowX: "auto", minWidth: 0 }}>
-          <div style={{ display: "flex", gap: 4, flexWrap: "nowrap" }}>
+        <div style={{ display: "flex", justifyContent: "center", minWidth: 0, padding: "8px 0" }}>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center" }}>
             {TABS.map((tab) => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
                 background: activeTab === tab.id ? T.primaryDim : "transparent",
@@ -252,7 +252,7 @@ export default function App() {
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap", overflowX: "auto", justifySelf: "end", padding: "8px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", justifySelf: "end", padding: "8px 0" }}>
           <div style={{ display: "flex", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2, flexShrink: 0 }}>
             {["competencia", "caixa"].map((r) => (
               <button key={r} onClick={() => setRegime(r)} style={{ border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", background: regime === r ? T.primary : "transparent", color: regime === r ? "#fff" : T.textSub }}>

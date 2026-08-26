@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, Component } from "react";
 import * as XLSX from "xlsx";
 import { THEMES } from "./theme.js";
 import { Logo } from "./components/Logo.jsx";
@@ -31,6 +31,28 @@ const LINHA_POR_ROTINA = { "2107": 138, "750-222": 209, "124-750": 211, "750-cai
 
 function fmt(n) { if (n == null) return "—"; return "R$ " + n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 function podeImportar(perfil) { return !persistenceEnabled || (perfil && (perfil.papel === "importador" || perfil.papel === "admin")); }
+
+// ═══════════════════════════════════════════════════════════════════
+// REDE DE SEGURANÇA — se qualquer aba tiver um erro inesperado, mostra
+// uma mensagem em vez de derrubar o site inteiro pra tela preta/branca.
+// ═══════════════════════════════════════════════════════════════════
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { erro: null }; }
+  static getDerivedStateFromError(erro) { return { erro }; }
+  render() {
+    if (this.state.erro) {
+      return (
+        <div style={{ padding: 40, textAlign: "center", fontFamily: "'Segoe UI', sans-serif" }}>
+          <div style={{ fontSize: 32, marginBottom: 10 }}>⚠️</div>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Algo deu errado nesta tela.</div>
+          <div style={{ color: "#888", fontSize: 13, marginBottom: 16, maxWidth: 500, margin: "0 auto 16px" }}>{String(this.state.erro?.message || this.state.erro)}</div>
+          <button onClick={() => this.setState({ erro: null })} style={{ background: "#E8500D", color: "#fff", border: "none", borderRadius: 6, padding: "8px 18px", fontWeight: 700, cursor: "pointer" }}>Tentar de novo</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function App() {
   const [tema, setTema] = useState("dark");
@@ -254,6 +276,7 @@ export default function App() {
       </div>
 
       <div style={{ padding: "24px 28px", maxWidth: 1280, margin: "0 auto" }}>
+      <ErrorBoundary key={activeTab}>
         {activeTab === "import" && (
           podeGerenciarImportacao ? (
             <ImportTab T={T} historico={historico} loading={loading}
@@ -282,6 +305,7 @@ export default function App() {
         {activeTab === "impostos" && <ImpostosTab T={T} overrides={overrides} />}
         {activeTab === "produtos" && <ProdutosTab T={T} historico={historico} overrides={overrides} />}
         {activeTab === "rastreabilidade" && <RastreabilidadeTab T={T} />}
+      </ErrorBoundary>
       </div>
 
       <div style={{ marginTop: 40, padding: "20px 28px", borderTop: `1px solid ${T.border}`, opacity: 0.6, display: "flex", justifyContent: "space-between" }}>
@@ -584,12 +608,21 @@ function ProdutosTab({ T, historico, overrides }) {
     );
   }
 
-  const dadosMes = dados1464[mesSelecionado];
+  const registroMes = dados1464[mesSelecionado];
+  const dadosMes = registroMes?.extra;
+  if (!dadosMes || !Array.isArray(dadosMes.produtos)) {
+    return (
+      <div>
+        <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Mix de Vendas</h1>
+        <div style={{ textAlign: "center", padding: "40px 0", color: T.textMuted }}>Não consegui carregar os dados desse mês. Tenta reimportar o arquivo "Mix de Vendas" na aba Importar.</div>
+      </div>
+    );
+  }
   const fatGerencial = REF.faturamentoGerencial[mesSelecionado];
   const ticketMedio = calcularTicketMedio(fatGerencial, dadosMes.totalQuantidade);
   const lucratividadeGerencial = overrides?.[mesSelecionado]?.[214] != null ? overrides[mesSelecionado][214] * 100 : null;
   const lucratividadeContabil = overrides?.[mesSelecionado]?.[204] != null ? overrides[mesSelecionado][204] * 100 : null;
-  const maiorFaturamento = Math.max(...dadosMes.produtos.map((p) => p.faturamento));
+  const maiorFaturamento = Math.max(1, ...dadosMes.produtos.map((p) => p.faturamento || 0));
 
   return (
     <div>

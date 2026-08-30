@@ -157,7 +157,7 @@ export const DRE_NODES = [
   "label": "OUTROS CUSTOS",
   "conta": 40005,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": 300805.68,
    "2026-02": -59866.94,
@@ -259,7 +259,7 @@ export const DRE_NODES = [
   "label": "CUSTO DO PRODUTO VENDIDO",
   "conta": 40123679,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": -2347968.08,
    "2026-02": -2145910.28,
@@ -293,7 +293,7 @@ export const DRE_NODES = [
   "label": "CUSTOS C/ PESSOAL",
   "conta": 40123691,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": -326695.03,
    "2026-02": -329849.03,
@@ -548,7 +548,7 @@ export const DRE_NODES = [
   "label": "OUTROS CUSTOS INDIRETOS",
   "conta": 40123716,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": -1209438.35,
    "2026-02": -1303235.48,
@@ -871,7 +871,7 @@ export const DRE_NODES = [
   "label": "DESPESAS C/ PESSOAL",
   "conta": 40019,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": -744927.99,
    "2026-02": -689526.88,
@@ -1336,7 +1336,7 @@ export const DRE_NODES = [
   "label": "DESPESAS GERAIS E ADMINISTRATIVAS",
   "conta": 40038,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": -428895.08,
    "2026-02": -633370.16,
@@ -1926,7 +1926,7 @@ export const DRE_NODES = [
   "label": "DESPESAS C/ IMOBILIZADO",
   "conta": 40070,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": -52214.67,
    "2026-02": -44425.79,
@@ -2011,7 +2011,7 @@ export const DRE_NODES = [
   "label": "DESPESAS C/ VEICULOS",
   "conta": 40075,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": -25836.98,
    "2026-02": -13286.33,
@@ -2062,7 +2062,7 @@ export const DRE_NODES = [
   "label": "DESPESAS FINANCEIRAS LIQUIDAS",
   "conta": 40080,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": -22231.89,
    "2026-02": -95236.34,
@@ -2203,7 +2203,7 @@ export const DRE_NODES = [
   "label": "DESPESAS TRIBUTARIAS",
   "conta": 40091,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": -452241.86,
    "2026-02": -134289.59,
@@ -2460,7 +2460,7 @@ export const DRE_NODES = [
   "label": "DESPESAS COM VENDAS",
   "conta": 40123726,
   "level": 2,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": 0,
    "2026-02": 0,
@@ -2494,7 +2494,7 @@ export const DRE_NODES = [
   "label": "DESPESAS INDEDUTIVEIS",
   "conta": 40101,
   "level": 1,
-  "total": false,
+  "total": true,
   "values": {
    "2026-01": -4260.84,
    "2026-02": -56.94,

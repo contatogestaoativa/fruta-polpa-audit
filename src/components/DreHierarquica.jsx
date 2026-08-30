@@ -55,18 +55,21 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
     const live = Boolean(importedFlags[mes]?.[node.row]);
     return { valor, live };
   }
-  function pctFatGerencial(node, mes) {
+  function pctSobre(node, mes) {
     if (PCT_ROWS.has(node.row)) return null; // já é % — não faz sentido % de %
-    const fat = REF.faturamentoGerencial[mes];
+    // Bloco contábil (linhas < 201): % sobre Receita Bruta (linha 4)
+    // Bloco gerencial (linhas >= 201): % sobre Faturamento Gerencial (linha 201)
+    const base = node.row < 201 ? REF.receitaBruta[mes] : REF.faturamentoGerencial[mes];
     const { valor } = valorDaLinha(node, mes);
-    if (!fat || valor === null || valor === undefined) return null;
-    return (valor / fat) * 100;
+    if (!base || valor === null || valor === undefined) return null;
+    return (valor / base) * 100;
   }
 
   // Total acumulado dos meses carregados (soma simples para valores em R$;
   // para linhas de % recalcula com base no acumulado da linha em R$
-  // correspondente ÷ acumulado do faturamento gerencial — nunca soma %).
+  // correspondente ÷ acumulado da base certa — nunca soma %).
   const totalFatGerencial = useMemo(() => meses.reduce((s, m) => s + (REF.faturamentoGerencial[m] || 0), 0), [meses]);
+  const totalReceitaBruta = useMemo(() => meses.reduce((s, m) => s + (REF.receitaBruta[m] || 0), 0), [meses]);
   function totalDaLinha(node) {
     if (PCT_ROWS.has(node.row)) {
       const moneyRow = porRow[PCT_PARA_LINHA_MONEY[node.row]];
@@ -76,10 +79,12 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
     }
     return meses.reduce((s, m) => s + (valorDaLinha(node, m).valor || 0), 0);
   }
-  function totalPctFatGerencial(node) {
-    if (PCT_ROWS.has(node.row) || !totalFatGerencial) return null;
+  function totalPctSobre(node) {
+    if (PCT_ROWS.has(node.row)) return null;
+    const base = node.row < 201 ? totalReceitaBruta : totalFatGerencial;
+    if (!base) return null;
     const soma = totalDaLinha(node);
-    return (soma / totalFatGerencial) * 100;
+    return (soma / base) * 100;
   }
 
   return (
@@ -88,7 +93,7 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
         <button onClick={expandirTudo} style={btnMini(T)}>Expandir tudo (analítico)</button>
         <button onClick={recolherTudo} style={btnMini(T)}>Recolher tudo (sintético)</button>
         <button onClick={() => setMostrarPct((v) => !v)} style={btnMini(T, mostrarPct)}>
-          {mostrarPct ? "▾ Ocultar % sobre Fat. Gerencial" : "▸ Mostrar % sobre Fat. Gerencial"}
+          {mostrarPct ? "▾ Ocultar % Sobre" : "▸ Mostrar % Sobre"}
         </button>
       </div>
       <div style={{ maxHeight: "calc(100vh - 200px)", overflow: "auto", border: `1px solid ${T.border}`, borderRadius: 8 }}>
@@ -111,11 +116,11 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
                 {meses.map((m) => (
                   <Fragment key={m}>
                     <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + 28, background: T.bg, zIndex: 2 }}>Valor</th>
-                    <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + 28, background: T.bg, zIndex: 2, color: T.gold }}>% Fat.</th>
+                    <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + 28, background: T.bg, zIndex: 2, color: T.gold }}>% Sobre</th>
                   </Fragment>
                 ))}
                 <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + 28, background: T.primaryDim, zIndex: 2, color: T.primary, borderLeft: `2px solid ${T.primary}` }}>Valor</th>
-                <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + 28, background: T.primaryDim, zIndex: 2, color: T.primary }}>% Fat.</th>
+                <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + 28, background: T.primaryDim, zIndex: 2, color: T.primary }}>% Sobre</th>
               </tr>
             )}
           </thead>
@@ -128,8 +133,8 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
                 temFilhos={sec.children.length > 0}
                 temNota={Object.keys(sec.header.comments || {}).length > 0}
                 notaAberta={notaAberta} setNotaAberta={setNotaAberta}
-                toggle={toggle} valorDaLinha={valorDaLinha} pctFatGerencial={pctFatGerencial}
-                totalDaLinha={totalDaLinha} totalPctFatGerencial={totalPctFatGerencial}
+                toggle={toggle} valorDaLinha={valorDaLinha} pctSobre={pctSobre}
+                totalDaLinha={totalDaLinha} totalPctSobre={totalPctSobre}
                 inserirTituloGerencialAntes={sec.header.row === 201}
               />
             ))}
@@ -150,7 +155,7 @@ function TituloSecao({ T, texto, colSpan }) {
   );
 }
 
-function FragmentComTitulo({ T, sec, meses, mostrarPct, isPct, isExpanded, temFilhos, temNota, notaAberta, setNotaAberta, toggle, valorDaLinha, pctFatGerencial, totalDaLinha, totalPctFatGerencial, inserirTituloGerencialAntes }) {
+function FragmentComTitulo({ T, sec, meses, mostrarPct, isPct, isExpanded, temFilhos, temNota, notaAberta, setNotaAberta, toggle, valorDaLinha, pctSobre, totalDaLinha, totalPctSobre, inserirTituloGerencialAntes }) {
   const colSpanTotal = meses.length * (mostrarPct ? 2 : 1) + 1 + (mostrarPct ? 2 : 1);
   const rows = [];
   if (inserirTituloGerencialAntes) {
@@ -176,7 +181,7 @@ function FragmentComTitulo({ T, sec, meses, mostrarPct, isPct, isExpanded, temFi
       </td>
       {sec.header && meses.map((m) => {
         const { valor, live } = valorDaLinha(sec.header, m);
-        const pct = mostrarPct ? pctFatGerencial(sec.header, m) : null;
+        const pct = mostrarPct ? pctSobre(sec.header, m) : null;
         return (
           <Fragment key={m}>
             <td style={{ ...tdStyle(T), textAlign: "right", fontWeight: 700, color: live ? T.leaf : (isPct ? T.gold : T.text), whiteSpace: "nowrap" }}>
@@ -192,7 +197,7 @@ function FragmentComTitulo({ T, sec, meses, mostrarPct, isPct, isExpanded, temFi
       })}
       {(() => {
         const totalValor = totalDaLinha(sec.header);
-        const totalPct = mostrarPct ? totalPctFatGerencial(sec.header) : null;
+        const totalPct = mostrarPct ? totalPctSobre(sec.header) : null;
         return (
           <Fragment key="total">
             <td style={{ ...tdStyle(T), textAlign: "right", fontWeight: 700, color: isPct ? T.gold : T.primary, whiteSpace: "nowrap", background: T.primaryDim, borderLeft: `2px solid ${T.primary}` }}>
@@ -236,7 +241,7 @@ function FragmentComTitulo({ T, sec, meses, mostrarPct, isPct, isExpanded, temFi
           </td>
           {meses.map((m) => {
             const { valor, live } = valorDaLinha(child, m);
-            const pct = mostrarPct ? pctFatGerencial(child, m) : null;
+            const pct = mostrarPct ? pctSobre(child, m) : null;
             return (
               <Fragment key={m}>
                 <td style={{ ...tdStyle(T), textAlign: "right", color: live ? T.leaf : T.textSub, fontWeight: live ? 700 : (child.total ? 700 : 400), whiteSpace: "nowrap" }}>{fmtMoeda(valor)}</td>
@@ -246,7 +251,7 @@ function FragmentComTitulo({ T, sec, meses, mostrarPct, isPct, isExpanded, temFi
           })}
           {(() => {
             const totalValor = totalDaLinha(child);
-            const totalPct = mostrarPct ? totalPctFatGerencial(child) : null;
+            const totalPct = mostrarPct ? totalPctSobre(child) : null;
             return (
               <Fragment key="total">
                 <td style={{ ...tdStyle(T), textAlign: "right", fontWeight: 700, color: T.primary, whiteSpace: "nowrap", background: T.primaryDim, borderLeft: `2px solid ${T.primary}` }}>{fmtMoeda(totalValor)}</td>

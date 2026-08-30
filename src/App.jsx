@@ -4,6 +4,8 @@ import { THEMES } from "./theme.js";
 import { Logo } from "./components/Logo.jsx";
 import { AnomalyBadge, StatCard } from "./components/AnomalyBadge.jsx";
 import DreHierarquica from "./components/DreHierarquica.jsx";
+import AnaliseTrimestral from "./components/AnaliseTrimestral.jsx";
+import { parseAnaliseTrimestral, ehArquivoAnaliseTrimestral } from "./lib/parsers/analiseTrimestral.js";
 import { parseDescontosConcedidos, detectarNotasDuplicadas } from "./lib/parsers/descontosConcedidos.js";
 import { parseGrupo222, detectarMesPredominante } from "./lib/parsers/grupo222.js";
 import { parseGrupo750Termo1Lote, parseGrupo750Termo2Lote, ehLoteMultiMes } from "./lib/parsers/grupo750.js";
@@ -23,6 +25,7 @@ const TABS = [
   { id: "anomalias", label: "Anomalias" },
   { id: "impostos", label: "Receita x Lucro x Impostos" },
   { id: "produtos", label: "Mix de Vendas" },
+  { id: "trimestral", label: "Análise Trimestral" },
   { id: "rastreabilidade", label: "Rastreabilidade" },
 ];
 
@@ -191,6 +194,26 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   }, [gravar]);
 
+  const [dadosTrimestral, setDadosTrimestral] = useState({});
+  const handleFileTrimestral = useCallback((e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setLoading("trimestral");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
+        if (!ehArquivoAnaliseTrimestral(wb)) {
+          alert("Não reconheci nenhuma aba com nome de mês (JAN, FEV, MAR...) neste arquivo.");
+        } else {
+          const resultado = parseAnaliseTrimestral(wb, XLSX.utils, 2026);
+          setDadosTrimestral((prev) => ({ ...prev, ...resultado, __arquivo: file.name }));
+        }
+      } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
+      setLoading(null); setActiveTab("trimestral"); e.target.value = "";
+    };
+    reader.readAsArrayBuffer(file);
+  }, []);
+
   // ── Recalcula a DRE completa por mês ──
   const { dre, overrides, importedFlags } = useMemo(() => {
     const overridesAcc = {}, flagsAcc = {}, dreAcc = [];
@@ -283,7 +306,8 @@ export default function App() {
               handleFile2107={handleFile2107} handleFilesGrupo222={handleFilesGrupo222}
               handleFileTermo1={handleFileLote("124-750", parseGrupo750Termo1Lote)}
               handleFileTermo2={handleFileLote("750-caixa10", parseGrupo750Termo2Lote)}
-              handleFileProdutos1464={handleFileProdutos1464} />
+              handleFileProdutos1464={handleFileProdutos1464}
+              handleFileTrimestral={handleFileTrimestral} mesesTrimestral={Object.keys(dadosTrimestral).filter((k) => k !== "__arquivo")} />
           ) : (
             <div style={{ textAlign: "center", padding: "60px 0", color: T.textMuted }}>
               <div style={{ fontSize: 32, marginBottom: 10 }}>🔒</div>
@@ -304,6 +328,7 @@ export default function App() {
         {activeTab === "anomalias" && <AnomaliasTab T={T} limiarPct={limiarPct} setLimiarPct={setLimiarPct} overrides={overrides} />}
         {activeTab === "impostos" && <ImpostosTab T={T} overrides={overrides} />}
         {activeTab === "produtos" && <ProdutosTab T={T} historico={historico} overrides={overrides} />}
+        {activeTab === "trimestral" && <AnaliseTrimestral T={T} overrides={overrides} dadosImportados={dadosTrimestral} />}
         {activeTab === "rastreabilidade" && <RastreabilidadeTab T={T} />}
       </ErrorBoundary>
       </div>
@@ -355,7 +380,7 @@ function TelaLogin({ T }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-function ImportTab({ T, historico, loading, handleFile2107, handleFilesGrupo222, handleFileTermo1, handleFileTermo2, handleFileProdutos1464 }) {
+function ImportTab({ T, historico, loading, handleFile2107, handleFilesGrupo222, handleFileTermo1, handleFileTermo2, handleFileProdutos1464, handleFileTrimestral, mesesTrimestral }) {
   return (
     <div>
       <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Importar relatórios</h1>
@@ -377,6 +402,9 @@ function ImportTab({ T, historico, loading, handleFile2107, handleFilesGrupo222,
         </ImportCard>
         <ImportCard T={T} nome="Mix de Vendas" desc="Rotina 1464 · Faturamento por Produto · 1 arquivo, todos os meses" badge="AUTOMÁTICO" badgeColor={T.leaf} meses={Object.keys(historico["1464-produtos"] || {})} loading={loading === "1464-produtos"}>
           <label style={botaoStyle(T, false)}>{loading === "1464-produtos" ? "Processando…" : "📂 Carregar arquivo"}<input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleFileProdutos1464} /></label>
+        </ImportCard>
+        <ImportCard T={T} nome="Comparativo 2025 x 2026" desc="Rotina 2122 · uma aba por mês (JAN, FEV...) · alimenta a Análise Trimestral" badge="AUTOMÁTICO" badgeColor={T.leaf} meses={mesesTrimestral || []} loading={loading === "trimestral"}>
+          <label style={botaoStyle(T, false)}>{loading === "trimestral" ? "Processando…" : "📂 Carregar arquivo"}<input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleFileTrimestral} /></label>
         </ImportCard>
       </div>
     </div>
@@ -457,18 +485,20 @@ function ReconciliacaoSecao({ T, titulo, hist, getValor, oficial, soComparaCompe
 function AnomaliasTab({ T, limiarPct, setLimiarPct, overrides }) {
   const todosAchados = useMemo(() => detectarAnomaliasTodasLinhas(DRE_NODES, overrides, limiarPct), [overrides, limiarPct]);
   const [mesFiltro, setMesFiltro] = useState("todos");
+  const [valorMinimo, setValorMinimo] = useState(0);
   const [ordenarPor, setOrdenarPor] = useState("variacaoPct");
   const [ordemDesc, setOrdemDesc] = useState(true);
 
   const achados = useMemo(() => {
     let lista = mesFiltro === "todos" ? todosAchados : todosAchados.filter((a) => a.mes === mesFiltro);
+    if (valorMinimo > 0) lista = lista.filter((a) => Math.abs(a.valor - a.media) >= valorMinimo);
     lista = [...lista].sort((a, b) => {
       const va = ordenarPor === "variacaoPct" ? Math.abs(a.variacaoPct) : a[ordenarPor];
       const vb = ordenarPor === "variacaoPct" ? Math.abs(b.variacaoPct) : b[ordenarPor];
       return ordemDesc ? vb - va : va - vb;
     });
     return lista;
-  }, [todosAchados, mesFiltro, ordenarPor, ordemDesc]);
+  }, [todosAchados, mesFiltro, valorMinimo, ordenarPor, ordemDesc]);
 
   function ordenarColuna(campo) {
     if (ordenarPor === campo) setOrdemDesc((v) => !v);
@@ -495,6 +525,10 @@ function AnomaliasTab({ T, limiarPct, setLimiarPct, overrides }) {
               <option value="todos">Todos</option>
               {mesesComDados.map((m) => <option key={m} value={m}>{MESES_LABEL[m]}</option>)}
             </select>
+          </label>
+          <label style={{ fontSize: 12, color: T.textSub, display: "flex", alignItems: "center", gap: 8 }} title="Ignora variações cujo impacto em R$ for menor que este valor — evita alarme com % alto sobre bases pequenas.">Impacto mínimo:
+            <span>R$</span>
+            <input type="number" value={valorMinimo} onChange={(e) => setValorMinimo(Number(e.target.value))} style={{ width: 80, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "4px 8px" }} />
           </label>
           <label style={{ fontSize: 12, color: T.textSub, display: "flex", alignItems: "center", gap: 8 }}>Sensibilidade:
             <input type="number" value={limiarPct} onChange={(e) => setLimiarPct(Number(e.target.value))} style={{ width: 56, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "4px 8px" }} /> %

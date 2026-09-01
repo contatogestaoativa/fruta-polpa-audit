@@ -90,9 +90,21 @@ export default async (req) => {
     return json({ erro: "payload_incompleto", mensagem: "Faltam os dados do mês no corpo da requisição." }, 400);
   }
 
+  // ── baseURL explícita, de propósito ──────────────────────────────
+  // Se o AI Gateway estiver ligado no site, o Netlify injeta sozinho a
+  // variável ANTHROPIC_BASE_URL apontando pro gateway dele, e o SDK da
+  // Anthropic LÊ essa variável automaticamente. O resultado é a nossa
+  // chave real sendo enviada pro gateway, que espera a chave-placeholder
+  // dele e responde 401 SEM CORPO — um erro que não acontece em teste
+  // local, porque a máquina do dev não tem essa variável.
+  //
+  // Fixamos a URL oficial pra usar a conta da Anthropic da Fruta Polpa,
+  // com custo e limites próprios, em vez dos créditos de IA do Netlify
+  // (que são compartilhados com todos os outros sites da conta).
   const workspaceId = (process.env.ANTHROPIC_WORKSPACE_ID || "").trim();
   const client = new Anthropic({
     apiKey,
+    baseURL: "https://api.anthropic.com",
     ...(workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {}),
   });
 
@@ -154,6 +166,7 @@ Comece direto pelo primeiro parágrafo, sem título e sem preâmbulo.`,
           statusDaApi: erro.status ?? null,
           requestId: erro.request_id || erro.requestID || null,
           runtime: process.version,
+          baseUrlInjetadaPeloNetlify: process.env.ANTHROPIC_BASE_URL || null,
         },
       }, 502);
     }

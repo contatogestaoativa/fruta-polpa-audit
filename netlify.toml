@@ -6,12 +6,10 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# As funções precisam passar antes do fallback de SPA abaixo.
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
+# O Netlify serve /.netlify/functions/* nativamente, ANTES de aplicar
+# redirects — não escreva regra pra esse caminho aqui. Uma regra
+# apontando /.netlify/functions/* pra ele mesmo é lida como loop
+# infinito e reprova o deploy no check "Redirect rules".
 [[redirects]]
   from = "/*"
   to = "/index.html"

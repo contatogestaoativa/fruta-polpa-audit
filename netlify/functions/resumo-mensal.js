@@ -22,6 +22,16 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import Anthropic from "@anthropic-ai/sdk";
+import { createHash } from "node:crypto";
+
+// Impressao digital da chave: 8 caracteres do sha256. Nao revela nada do
+// valor, mas permite comparar se a chave configurada aqui e a mesma que
+// funciona em outro lugar. Sem isso, "chave errada" e "chave certa mal
+// salva" sao indistinguiveis de fora.
+function impressaoDigital(valor) {
+  if (!valor) return null;
+  return createHash("sha256").update(valor).digest("hex").slice(0, 8);
+}
 
 const MODELO = "claude-sonnet-4-6";
 // 1 a 2 páginas de texto corrido. Abaixo de ~2500 o resumo corta no meio.
@@ -136,6 +146,8 @@ Comece direto pelo primeiro parágrafo, sem título e sem preâmbulo.`,
           tamanho: apiKey.length,
           tinhaEspacoOuQuebraDeLinha: apiKeyBruta !== apiKey,
           variavelUsada: process.env.ANTHROPIC_API_KEY_FRUTAPOLPA ? "ANTHROPIC_API_KEY_FRUTAPOLPA" : "ANTHROPIC_API_KEY",
+          impressaoDigitalDaChave: impressaoDigital(apiKey),
+          workspaceConfigurado: workspaceId || null,
         },
       }, 502);
     }

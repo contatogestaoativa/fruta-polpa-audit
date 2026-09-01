@@ -11,6 +11,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 
 function lerChave() {
   const doAmbiente = process.env.ANTHROPIC_API_KEY_FRUTAPOLPA || process.env.ANTHROPIC_API_KEY;
@@ -48,6 +49,7 @@ if (!chave) {
 }
 
 console.log("formato: prefixo sk-ant-", chave.startsWith("sk-ant-") ? "OK" : "AUSENTE", "| tamanho", chave.length);
+console.log("impressao digital desta chave:", createHash("sha256").update(chave).digest("hex").slice(0, 8), "(compare com a que o site reporta)");
 console.log("\nchamando a API da Anthropic...\n");
 
 const workspaceId = (process.env.ANTHROPIC_WORKSPACE_ID || lerVar("ANTHROPIC_WORKSPACE_ID") || "").trim();

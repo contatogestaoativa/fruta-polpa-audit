@@ -5,6 +5,8 @@ import { Logo } from "./components/Logo.jsx";
 import { AnomalyBadge, StatCard } from "./components/AnomalyBadge.jsx";
 import DreHierarquica from "./components/DreHierarquica.jsx";
 import AnaliseTrimestral from "./components/AnaliseTrimestral.jsx";
+import ComparativoPeriodos from "./components/ComparativoPeriodos.jsx";
+import ResumoDoMes from "./components/ResumoDoMes.jsx";
 import { parseAnaliseTrimestral, ehArquivoAnaliseTrimestral } from "./lib/parsers/analiseTrimestral.js";
 import { parseDescontosConcedidos, detectarNotasDuplicadas } from "./lib/parsers/descontosConcedidos.js";
 import { parseGrupo222, detectarMesPredominante } from "./lib/parsers/grupo222.js";
@@ -16,11 +18,14 @@ import {
   importarLoteEGravarLinha, carregarHistoricoDre,
 } from "./lib/supabaseClient.js";
 import { MESES, MESES_LABEL, OFICIAL, montarDreDoMes, calcularCargaTributaria, detectarAnomaliasTodasLinhas, REF } from "./lib/dreReference.js";
+import { fechamentosNoMes } from "./lib/fechamentos.js";
 import { DRE_NODES } from "./lib/dreNodes.js";
 
 const TABS = [
   { id: "import", label: "Importar" },
   { id: "dre", label: "DRE" },
+  { id: "comparativo", label: "Comparativo" },
+  { id: "resumo", label: "Resumo do Mês" },
   { id: "reconciliacao", label: "Reconciliação" },
   { id: "anomalias", label: "Anomalias" },
   { id: "impostos", label: "Receita x Lucro x Impostos" },
@@ -324,6 +329,8 @@ export default function App() {
             <DreHierarquica T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} importedFlags={importedFlags} />
           </div>
         )}
+        {activeTab === "comparativo" && <ComparativoPeriodos T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
+        {activeTab === "resumo" && <ResumoDoMes T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
         {activeTab === "reconciliacao" && (hasData ? <ReconciliacaoTab T={T} historico={historico} regime={regime} /> : <EmptyState T={T} onGoImport={() => setActiveTab("import")} />)}
         {activeTab === "anomalias" && <AnomaliasTab T={T} limiarPct={limiarPct} setLimiarPct={setLimiarPct} overrides={overrides} />}
         {activeTab === "impostos" && <ImpostosTab T={T} overrides={overrides} />}
@@ -483,22 +490,33 @@ function ReconciliacaoSecao({ T, titulo, hist, getValor, oficial, soComparaCompe
 
 // ═══════════════════════════════════════════════════════════════════
 function AnomaliasTab({ T, limiarPct, setLimiarPct, overrides }) {
-  const todosAchados = useMemo(() => detectarAnomaliasTodasLinhas(DRE_NODES, overrides, limiarPct), [overrides, limiarPct]);
   const [mesFiltro, setMesFiltro] = useState("todos");
   const [valorMinimo, setValorMinimo] = useState(0);
-  const [ordenarPor, setOrdenarPor] = useState("variacaoPct");
+  const [porFechamento, setPorFechamento] = useState(false);
+  const [ordenarPor, setOrdenarPor] = useState("delta");
   const [ordemDesc, setOrdemDesc] = useState(true);
+
+  const todosAchados = useMemo(
+    () => detectarAnomaliasTodasLinhas(DRE_NODES, overrides, limiarPct, { porFechamento }),
+    [overrides, limiarPct, porFechamento]
+  );
 
   const achados = useMemo(() => {
     let lista = mesFiltro === "todos" ? todosAchados : todosAchados.filter((a) => a.mes === mesFiltro);
-    if (valorMinimo > 0) lista = lista.filter((a) => Math.abs(a.valor - a.media) >= valorMinimo);
+    if (valorMinimo > 0) lista = lista.filter((a) => Math.abs(a.delta) >= valorMinimo);
     lista = [...lista].sort((a, b) => {
-      const va = ordenarPor === "variacaoPct" ? Math.abs(a.variacaoPct) : a[ordenarPor];
-      const vb = ordenarPor === "variacaoPct" ? Math.abs(b.variacaoPct) : b[ordenarPor];
+      const va = ordenarPor === "valor" ? a.valor : Math.abs(a[ordenarPor]);
+      const vb = ordenarPor === "valor" ? b.valor : Math.abs(b[ordenarPor]);
       return ordemDesc ? vb - va : va - vb;
     });
     return lista;
   }, [todosAchados, mesFiltro, valorMinimo, ordenarPor, ordemDesc]);
+
+  const ocultadasPeloValor = useMemo(() => {
+    if (valorMinimo <= 0) return 0;
+    const base = mesFiltro === "todos" ? todosAchados : todosAchados.filter((a) => a.mes === mesFiltro);
+    return base.length - achados.length;
+  }, [todosAchados, mesFiltro, valorMinimo, achados.length]);
 
   function ordenarColuna(campo) {
     if (ordenarPor === campo) setOrdemDesc((v) => !v);
@@ -506,19 +524,26 @@ function AnomaliasTab({ T, limiarPct, setLimiarPct, overrides }) {
   }
   function setaOrdenacao(campo) {
     if (ordenarPor !== campo) return "";
-    return ordemDesc ? " ▾" : " ▴";
+    return ordemDesc ? " \u25be" : " \u25b4";
   }
 
   const mesesComDados = useMemo(() => Array.from(new Set(todosAchados.map((a) => a.mes))).sort(), [todosAchados]);
+  const sufixo = porFechamento ? " / fech." : "";
 
   return (
     <div>
       <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Anomalias — fora da curva</h1>
-      <p style={{ color: T.textSub, fontSize: 13, marginBottom: 16, maxWidth: 680 }}>
+      <p style={{ color: T.textSub, fontSize: 13, marginBottom: 10, maxWidth: 760 }}>
         Cada uma das 186 linhas da DRE (totais e contas sintéticas — inclusive as que ficam ocultas por padrão na árvore) é comparada mês a mês com a <b>média dos 3 meses anteriores</b>. Só aparecem aqui as contas cuja variação passou do limite de sensibilidade definido abaixo — isso serve para a contabilidade antecipar justificativas antes da diretoria perguntar.
       </p>
+      <p style={{ color: T.textMuted, fontSize: 12, marginBottom: 16, maxWidth: 760 }}>
+        Use os dois filtros juntos: a <b>sensibilidade (%)</b> diz o quanto a conta se moveu; o <b>impacto mínimo (R$)</b> diz se esse movimento vale a conversa. Uma conta de média R$ 93 que foi para R$ 500 varia +438%, mas move só R$ 407 — com impacto mínimo em R$ 5.000 ela some da lista.
+      </p>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
-        <div style={{ fontSize: 13, fontWeight: 700 }}>{achados.length} conta(s) fora da curva {mesFiltro !== "todos" && `em ${MESES_LABEL[mesFiltro]}`}</div>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>
+          {achados.length} conta(s) fora da curva {mesFiltro !== "todos" && `em ${MESES_LABEL[mesFiltro]}`}
+          {ocultadasPeloValor > 0 && <span style={{ fontWeight: 400, color: T.textMuted }}> &nbsp;·&nbsp; {ocultadasPeloValor} ocultada(s) por impacto abaixo de {fmtR(valorMinimo)}</span>}
+        </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <label style={{ fontSize: 12, color: T.textSub, display: "flex", alignItems: "center", gap: 8 }}>Mês:
             <select value={mesFiltro} onChange={(e) => setMesFiltro(e.target.value)} style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "4px 8px", fontSize: 12 }}>
@@ -526,25 +551,36 @@ function AnomaliasTab({ T, limiarPct, setLimiarPct, overrides }) {
               {mesesComDados.map((m) => <option key={m} value={m}>{MESES_LABEL[m]}</option>)}
             </select>
           </label>
-          <label style={{ fontSize: 12, color: T.textSub, display: "flex", alignItems: "center", gap: 8 }} title="Ignora variações cujo impacto em R$ for menor que este valor — evita alarme com % alto sobre bases pequenas.">Impacto mínimo:
+          <label style={{ fontSize: 12, color: T.textSub, display: "flex", alignItems: "center", gap: 8 }} title="Esconde as anomalias cuja diferença em R$ (mês − média dos 3 meses) for menor que este valor. Evita alarme de % alto sobre base pequena.">Impacto mínimo:
             <span>R$</span>
-            <input type="number" value={valorMinimo} onChange={(e) => setValorMinimo(Number(e.target.value))} style={{ width: 80, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "4px 8px" }} />
+            <input type="number" min={0} step={1000} value={valorMinimo} onChange={(e) => setValorMinimo(Math.max(0, Number(e.target.value) || 0))} style={{ width: 90, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "4px 8px" }} />
           </label>
           <label style={{ fontSize: 12, color: T.textSub, display: "flex", alignItems: "center", gap: 8 }}>Sensibilidade:
             <input type="number" value={limiarPct} onChange={(e) => setLimiarPct(Number(e.target.value))} style={{ width: 56, background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "4px 8px" }} /> %
           </label>
+          <label style={{ fontSize: 12, color: T.textSub, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }} title="Compara valor por fechamento (÷ nº de sextas-feiras do mês) em vez do valor cheio — evita acusar anomalia só porque o mês teve 5 fechamentos contra 4 dos anteriores.">
+            <input type="checkbox" checked={porFechamento} onChange={(e) => setPorFechamento(e.target.checked)} />
+            Por fechamento
+          </label>
         </div>
       </div>
 
-      <div style={{ maxHeight: "calc(100vh - 320px)", overflow: "auto", border: `1px solid ${T.border}`, borderRadius: 8 }}>
+      {porFechamento && (
+        <div style={{ fontSize: 11, color: T.gold, marginBottom: 10 }}>
+          ⚙ Valores divididos pelo nº de fechamentos (sextas-feiras) de cada mês — {MESES.map((m) => `${MESES_LABEL[m]} ${fechamentosNoMes(m)}`).join(" · ")}
+        </div>
+      )}
+
+      <div style={{ maxHeight: "calc(100vh - 360px)", overflow: "auto", border: `1px solid ${T.border}`, borderRadius: 8 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead><tr>
             <th style={{ ...thAnomalia(T) }}>Mês</th>
             <th style={{ ...thAnomalia(T) }}>Linha</th>
             <th style={{ ...thAnomalia(T) }}>Conta</th>
             <th style={{ ...thAnomalia(T) }}>Tipo</th>
-            <th style={{ ...thAnomalia(T), cursor: "pointer" }} onClick={() => ordenarColuna("valor")}>Valor{setaOrdenacao("valor")}</th>
-            <th style={{ ...thAnomalia(T) }}>Média 3 meses</th>
+            <th style={{ ...thAnomalia(T), cursor: "pointer" }} onClick={() => ordenarColuna("valor")}>Valor{sufixo}{setaOrdenacao("valor")}</th>
+            <th style={{ ...thAnomalia(T) }}>Média 3 meses{sufixo}</th>
+            <th style={{ ...thAnomalia(T), cursor: "pointer", color: T.gold }} onClick={() => ordenarColuna("delta")} title="Diferença em R$ entre o valor do mês e a média dos 3 meses anteriores. É o tamanho real do impacto.">Diferença (R$){setaOrdenacao("delta")}</th>
             <th style={{ ...thAnomalia(T), cursor: "pointer" }} onClick={() => ordenarColuna("variacaoPct")}>Variação{setaOrdenacao("variacaoPct")}</th>
             <th style={{ ...thAnomalia(T) }}>Nível</th>
           </tr></thead>
@@ -559,12 +595,18 @@ function AnomaliasTab({ T, limiarPct, setLimiarPct, overrides }) {
                 </td>
                 <td style={{ padding: "6px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{fmtR(a.valor)}</td>
                 <td style={{ padding: "6px 10px", borderBottom: `1px solid ${T.border}`, color: T.textMuted, whiteSpace: "nowrap" }}>{fmtR(a.media)}</td>
+                <td style={{ padding: "6px 10px", borderBottom: `1px solid ${T.border}`, fontWeight: 700, whiteSpace: "nowrap", color: a.delta > 0 ? T.leaf : T.danger }}>
+                  {fmtDelta(a.delta)}
+                </td>
                 <td style={{ padding: "6px 10px", borderBottom: `1px solid ${T.border}`, fontWeight: 700, color: a.variacaoPct > 0 ? T.leaf : T.danger }}>{a.variacaoPct > 0 ? "+" : ""}{a.variacaoPct.toFixed(2)}%</td>
                 <td style={{ padding: "6px 10px", borderBottom: `1px solid ${T.border}` }}><AnomalyBadge T={T} nivel={a.nivel} variacaoPct={null} /></td>
               </tr>
             ))}
             {achados.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: 20, textAlign: "center", color: T.textMuted }}>Nenhuma conta fora da curva com essa sensibilidade{mesFiltro !== "todos" ? " neste mês" : ""}.</td></tr>
+              <tr><td colSpan={9} style={{ padding: 20, textAlign: "center", color: T.textMuted }}>
+                Nenhuma conta fora da curva com esses filtros{mesFiltro !== "todos" ? " neste mês" : ""}.
+                {valorMinimo > 0 && " Tente baixar o impacto mínimo."}
+              </td></tr>
             )}
           </tbody>
         </table>
@@ -576,6 +618,12 @@ function thAnomalia(T) {
   return { textAlign: "left", padding: "8px 10px", color: T.textMuted, fontWeight: 700, fontSize: 10, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", position: "sticky", top: 0, background: T.bg, zIndex: 1 };
 }
 function fmtR(n) { if (n == null) return "—"; return "R$ " + n.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+// Delta em R$ sempre com ícone + sinal (nunca só cor — acessibilidade).
+function fmtDelta(n) {
+  if (n == null) return "—";
+  const sinal = n > 0 ? "▲ +" : n < 0 ? "▼ −" : "= ";
+  return sinal + "R$ " + Math.abs(n).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
 
 // ═══════════════════════════════════════════════════════════════════
 function ImpostosTab({ T, overrides }) {

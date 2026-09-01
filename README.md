@@ -6,7 +6,36 @@
 - **Import inteligente**: detecta automaticamente lote (arquivo com uma aba por mês) vs. mês único, e detecta o mês pelo conteúdo quando aplicável.
 - **Reconciliação**: compara todo valor importado contra o número já validado manualmente na auditoria.
 - **Toggle Competência/Caixa** (afeta hoje a linha 138) e **tema Claro/Escuro**.
-- **Detecção de anomalia** configurável (variação % vs. média dos últimos 3 meses).
+- **Detecção de anomalia** configurável (variação % vs. média dos últimos 3 meses), com **coluna de diferença em R$**, filtro de **impacto mínimo** e opção de comparar **por fechamento**.
+- **Comparativo de Períodos**: escolhe dois meses (ou dois intervalos) quaisquer e mostra a DRE inteira lado a lado, com diferença em R$, em % e análise vertical dos dois lados.
+- **Resumo do Mês**: compara o mês com a DRE média do ano, lista as contas que explicam o desvio e gera um resumo escrito por IA (1 a 2 páginas) via Netlify Function.
+- **Fechamentos do mês** (= sextas-feiras) na DRE, no Comparativo e nas Anomalias, com opção de ver todos os números normalizados por fechamento.
+
+### Anomalias — % e R$ juntos
+A sensibilidade (%) diz *o quanto* a conta se moveu; o impacto mínimo (R$) diz se esse movimento *vale a conversa*. Uma conta de média R$ 93 que foi para R$ 500 varia +438% e move R$ 407 — com impacto mínimo em R$ 5.000 ela sai da lista. A coluna **Diferença (R$)** é o delta entre o valor do mês e a média dos 3 meses anteriores, e é por ela que a lista vem ordenada por padrão.
+
+### Comparativo de Períodos
+Três bases de comparação, porque comparar períodos de tamanhos diferentes em valor cheio distorce a leitura:
+
+| Base | O que faz | Quando usar |
+|---|---|---|
+| Total | soma pura do período | períodos do mesmo tamanho |
+| Média mensal | soma ÷ nº de meses | 1 mês × 1 trimestre |
+| Por fechamento | soma ÷ nº de sextas-feiras | qualquer comparação de volume |
+
+A tela avisa quando os dois períodos se sobrepõem ou têm tamanhos diferentes com a base em "Total".
+
+### Resumo do Mês (com IA)
+Três camadas na mesma tela: os cards das quatro linhas de resultado (58 Lucro Bruto, 204 Lucratividade Contábil, 214 Lucratividade Gerencial, 219 Lucratividade com as Subvenções) mais a margem bruta em %; a lista das 15 contas analíticas que mais afastaram o mês da média; e a DRE média × mês inteira, linha por linha.
+
+**A média usa uma janela móvel** dos meses já fechados, travada em no máximo 12. O botão "Incluir o mês analisado na média" decide se a janela conta o próprio mês: ligado (padrão), Jul com 7 meses fechados compara contra a média de 7; desligado, contra a média dos 6 anteriores.
+
+**O cálculo não passa pela IA.** Todos os números são apurados no cliente (`src/lib/resumoMensal.js`), conferidos contra a DRE, e só então enviados prontos para a função escrever a narrativa. O modelo é instruído a não calcular nada. As tabelas funcionam mesmo sem a chave da API configurada — só o texto deixa de ser gerado.
+
+Nunca se soma nem se tira média de linha percentual: a média de uma linha de % é sempre lucro acumulado ÷ faturamento acumulado da janela.
+
+### Fechamentos (sextas-feiras)
+O número de fechamentos de um mês é a quantidade de sextas-feiras dele — uma variável de volume: um mês com 5 sextas tem capacidade de faturamento estruturalmente maior que um de 4. Em 2026: Jan 5 · Fev 4 · Mar 4 · Abr 4 · Mai 5 · Jun 4 · Jul 5. A regra vive em `src/lib/fechamentos.js` e é usada na DRE (botão "Por fechamento"), no Comparativo (base de comparação) e nas Anomalias (checkbox "Por fechamento", que evita acusar anomalia num mês de 5 fechamentos contra meses de 4).
 
 ## Pendente (falta amostra real de dados para automatizar)
 - Rotina 2122 (DRE contábil bruta) e Rotina 1464 (Faturamento Gerencial) — hoje usam valor de referência da auditoria manual.
@@ -76,6 +105,25 @@ Depois disso, o indicador no topo do site deve mudar de "○ Modo local" para "�
 
 ---
 
+---
+
+## Passo 4 — Configurar a IA do Resumo do Mês
+
+A aba **Resumo do Mês** funciona sem nenhuma configuração: mês × média, contas que explicam o desvio e a DRE comparada são todos calculados no navegador. Só o **texto escrito por IA** precisa de chave.
+
+A chave não pode ficar no front (o sistema roda inteiro no navegador; qualquer chave ali fica visível no DevTools). Por isso ela mora numa Netlify Function, em `netlify/functions/resumo-mensal.js`.
+
+1. Pegue uma chave em [console.anthropic.com](https://console.anthropic.com) → API Keys.
+2. No Netlify: **Site settings → Environment variables → Add a variable**
+   - `ANTHROPIC_API_KEY_FRUTAPOLPA` = a chave (começa com `sk-ant-`)
+3. **Deploys → Trigger deploy → Deploy site**.
+
+Modelo usado: `claude-sonnet-4-6`, `max_tokens` 4000 (um resumo de 1 a 2 páginas corta no meio abaixo de ~2500). Custo por resumo gerado: alguns centavos.
+
+**Rodando localmente:** `npm run dev` (Vite puro) não serve funções — o botão de IA vai avisar isso na tela. Para testar a função local, use `netlify dev` com a variável exportada no shell.
+
+---
+
 ## Testar se rodou como esperado
 - Local (`npm run dev`) e no Netlify publicado, importe os arquivos reais (`2107_...xlsx`, `750_-_grupo_222_...xlsx`, `ROTINA_124_GRUPO_750...xls`, `ROTINA_124_-_GRUPO_538...xlsx`).
 - Na aba **DRE**, as linhas 138/209/211 devem ficar verdes.
@@ -91,8 +139,16 @@ src/
     dreNodes.js               ← as 186 linhas reais da DRE (analítico + comentários)
     supabaseClient.js         ← conexão e função de importarLote()
     parsers/                  ← as regras de cada rotina (138, 209, 211, anomalia)
+  lib/
+    fechamentos.js            ← nº de fechamentos do mês (= sextas-feiras)
+    resumoMensal.js           ← janela da média + comparação mês x média (cálculo puro)
   components/
     DreHierarquica.jsx        ← árvore da DRE com mostrar/ocultar e notas
+    ComparativoPeriodos.jsx   ← comparativo entre dois períodos quaisquer
+    ResumoDoMes.jsx           ← mês x média do ano + resumo escrito por IA
+    AnaliseTrimestral.jsx     ← comparativo 2025 x 2026 por trimestre
     Logo.jsx, AnomalyBadge.jsx
+netlify/functions/
+  resumo-mensal.js            ← guarda a chave da Anthropic e chama a Messages API
 schema.sql                    ← script para rodar no Supabase SQL Editor
 ```

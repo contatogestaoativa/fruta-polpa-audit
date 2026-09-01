@@ -1,10 +1,12 @@
 import { useState, useMemo, Fragment } from "react";
 import { DRE_NODES } from "../lib/dreNodes.js";
 import { getValorNode, REF } from "../lib/dreReference.js";
+import { fechamentosNoMes, fechamentosNoPeriodo } from "../lib/fechamentos.js";
 
 const PCT_ROWS = new Set([204, 214, 219]); // Lucratividade Contábil / Gerencial / c/ Subvenções
 const PCT_PARA_LINHA_MONEY = { 204: 203, 214: 213, 219: 218 }; // linha % -> linha em R$ correspondente, p/ acumular certo
 const HEADER_TOP = 0; // agora relativo ao próprio painel de rolagem (não mais à página)
+const ALTURA_LINHA1 = 46; // altura da 1ª linha do cabeçalho (mês + "N fech.") — usada p/ grudar a 2ª linha
 
 function fmtMoeda(n) {
   if (n === null || n === undefined) return "—";
@@ -41,6 +43,10 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
   const [expandidas, setExpandidas] = useState(() => new Set());
   const [notaAberta, setNotaAberta] = useState(null);
   const [mostrarPct, setMostrarPct] = useState(false);
+  // Fechamentos = sextas-feiras do mês. Ver lib/fechamentos.js.
+  const [porFechamento, setPorFechamento] = useState(false);
+  const fechamentosPorMes = useMemo(() => Object.fromEntries(meses.map((m) => [m, fechamentosNoMes(m)])), [meses]);
+  const totalFechamentos = useMemo(() => fechamentosNoPeriodo(meses), [meses]);
 
   const toggle = (row) => setExpandidas((prev) => {
     const next = new Set(prev);
@@ -50,17 +56,26 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
   const expandirTudo = () => setExpandidas(new Set(secoes.map((s) => s.header.row)));
   const recolherTudo = () => setExpandidas(new Set());
 
+  // valor CHEIO da linha no mês (sem normalização) — é o que alimenta os %
+  function valorBruto(node, mes) {
+    return getValorNode(node, mes, overrides);
+  }
+  // valor EXIBIDO — se "por fechamento" estiver ligado, divide pelo nº de
+  // sextas-feiras do mês. Linhas que já são % ficam intocadas.
   function valorDaLinha(node, mes) {
-    const valor = getValorNode(node, mes, overrides);
+    const bruto = valorBruto(node, mes);
     const live = Boolean(importedFlags[mes]?.[node.row]);
-    return { valor, live };
+    if (!porFechamento || PCT_ROWS.has(node.row) || typeof bruto !== "number") return { valor: bruto, live };
+    const f = fechamentosPorMes[mes];
+    return { valor: f ? bruto / f : null, live };
   }
   function pctSobre(node, mes) {
     if (PCT_ROWS.has(node.row)) return null; // já é % — não faz sentido % de %
-    // Bloco contábil (linhas < 201): % sobre Receita Bruta (linha 4)
-    // Bloco gerencial (linhas >= 201): % sobre Faturamento Gerencial (linha 201)
+    // Bloco contábil (linhas < 201): % sobre a Receita dos Produtos Vendidos (linha 4)
+    // Bloco gerencial (linhas >= 201): % sobre o Faturamento Gerencial (linha 201)
+    // (o % não muda com "por fechamento" — é razão entre duas linhas do mesmo mês)
     const base = node.row < 201 ? REF.receitaBruta[mes] : REF.faturamentoGerencial[mes];
-    const { valor } = valorDaLinha(node, mes);
+    const valor = valorBruto(node, mes);
     if (!base || valor === null || valor === undefined) return null;
     return (valor / base) * 100;
   }
@@ -70,21 +85,24 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
   // correspondente ÷ acumulado da base certa — nunca soma %).
   const totalFatGerencial = useMemo(() => meses.reduce((s, m) => s + (REF.faturamentoGerencial[m] || 0), 0), [meses]);
   const totalReceitaBruta = useMemo(() => meses.reduce((s, m) => s + (REF.receitaBruta[m] || 0), 0), [meses]);
+  function somaBrutaDaLinha(node) {
+    return meses.reduce((s, m) => s + (valorBruto(node, m) || 0), 0);
+  }
   function totalDaLinha(node) {
     if (PCT_ROWS.has(node.row)) {
       const moneyRow = porRow[PCT_PARA_LINHA_MONEY[node.row]];
       if (!moneyRow || !totalFatGerencial) return null;
-      const somaMoney = meses.reduce((s, m) => s + (valorDaLinha(moneyRow, m).valor || 0), 0);
-      return (somaMoney / totalFatGerencial) * 100;
+      return (somaBrutaDaLinha(moneyRow) / totalFatGerencial) * 100;
     }
-    return meses.reduce((s, m) => s + (valorDaLinha(node, m).valor || 0), 0);
+    const soma = somaBrutaDaLinha(node);
+    if (!porFechamento) return soma;
+    return totalFechamentos ? soma / totalFechamentos : null;
   }
   function totalPctSobre(node) {
     if (PCT_ROWS.has(node.row)) return null;
     const base = node.row < 201 ? totalReceitaBruta : totalFatGerencial;
     if (!base) return null;
-    const soma = totalDaLinha(node);
-    return (soma / base) * 100;
+    return (somaBrutaDaLinha(node) / base) * 100;
   }
 
   return (
@@ -95,6 +113,14 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
         <button onClick={() => setMostrarPct((v) => !v)} style={btnMini(T, mostrarPct)}>
           {mostrarPct ? "▾ Ocultar % Sobre" : "▸ Mostrar % Sobre"}
         </button>
+        <button onClick={() => setPorFechamento((v) => !v)} style={btnMini(T, porFechamento)}
+          title="Divide cada linha pelo nº de fechamentos (sextas-feiras) do mês. Um mês de 5 sextas fatura mais que um de 4 — comparar sem normalizar distorce a leitura.">
+          {porFechamento ? "✓ Por fechamento" : "○ Por fechamento"}
+        </button>
+      </div>
+      <div style={{ fontSize: 11, color: porFechamento ? T.gold : T.textMuted, marginBottom: 10 }}>
+        Fechamentos (sextas-feiras) no período: <b>{totalFechamentos}</b> — {meses.map((m) => `${mesesLabel[m]} ${fechamentosPorMes[m]}`).join(" · ")}
+        {porFechamento && <span> &nbsp;·&nbsp; ⚙ valores exibidos <b>por fechamento</b> (as linhas de % continuam sendo % do mês cheio)</span>}
       </div>
       <div style={{ maxHeight: "calc(100vh - 200px)", overflow: "auto", border: `1px solid ${T.border}`, borderRadius: 8 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -104,23 +130,25 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
               {meses.map((m) => (
                 <th key={m} colSpan={mostrarPct ? 2 : 1} style={{ ...thStyle(T), textAlign: mostrarPct ? "center" : "right", whiteSpace: "nowrap", position: "sticky", top: HEADER_TOP, background: T.bg, zIndex: 2 }}>
                   {mesesLabel[m]}
+                  <span style={{ display: "block", fontSize: 9, fontWeight: 400, color: T.textMuted }}>{fechamentosPorMes[m]} fech.</span>
                 </th>
               ))}
               <th colSpan={mostrarPct ? 2 : 1} style={{ ...thStyle(T), textAlign: mostrarPct ? "center" : "right", whiteSpace: "nowrap", position: "sticky", top: HEADER_TOP, background: T.primaryDim, zIndex: 2, color: T.primary, borderLeft: `2px solid ${T.primary}` }}>
                 Total ({meses.length}m)
+                <span style={{ display: "block", fontSize: 9, fontWeight: 400, color: T.primary, opacity: 0.8 }}>{totalFechamentos} fech.</span>
               </th>
             </tr>
             {mostrarPct && (
               <tr>
-                <th style={{ ...thStyle(T), position: "sticky", left: 0, top: HEADER_TOP + 28, background: T.bg, zIndex: 3 }}></th>
+                <th style={{ ...thStyle(T), position: "sticky", left: 0, top: HEADER_TOP + ALTURA_LINHA1, background: T.bg, zIndex: 3 }}></th>
                 {meses.map((m) => (
                   <Fragment key={m}>
-                    <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + 28, background: T.bg, zIndex: 2 }}>Valor</th>
-                    <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + 28, background: T.bg, zIndex: 2, color: T.gold }}>% Sobre</th>
+                    <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + ALTURA_LINHA1, background: T.bg, zIndex: 2 }}>Valor</th>
+                    <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + ALTURA_LINHA1, background: T.bg, zIndex: 2, color: T.gold }}>% Sobre</th>
                   </Fragment>
                 ))}
-                <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + 28, background: T.primaryDim, zIndex: 2, color: T.primary, borderLeft: `2px solid ${T.primary}` }}>Valor</th>
-                <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + 28, background: T.primaryDim, zIndex: 2, color: T.primary }}>% Sobre</th>
+                <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + ALTURA_LINHA1, background: T.primaryDim, zIndex: 2, color: T.primary, borderLeft: `2px solid ${T.primary}` }}>Valor</th>
+                <th style={{ ...thStyle(T), textAlign: "right", fontSize: 10, position: "sticky", top: HEADER_TOP + ALTURA_LINHA1, background: T.primaryDim, zIndex: 2, color: T.primary }}>% Sobre</th>
               </tr>
             )}
           </thead>

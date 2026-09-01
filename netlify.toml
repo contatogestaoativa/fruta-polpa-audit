@@ -2,6 +2,14 @@
   command = "npm run build"
   publish = "dist"
 
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+# O Netlify serve /.netlify/functions/* nativamente, ANTES de aplicar
+# redirects — não escreva regra pra esse caminho aqui. Uma regra
+# apontando /.netlify/functions/* pra ele mesmo é lida como loop
+# infinito e reprova o deploy no check "Redirect rules".
 [[redirects]]
   from = "/*"
   to = "/index.html"

@@ -14,6 +14,8 @@
 // encontramos e corrigimos ao validar contra os totais oficiais.
 // ═══════════════════════════════════════════════════════════════════
 
+import { fechamentosNoMes } from "./fechamentos.js";
+
 export const MESES = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07"];
 export const MESES_LABEL = { "2026-01": "Jan", "2026-02": "Fev", "2026-03": "Mar", "2026-04": "Abr", "2026-05": "Mai", "2026-06": "Jun", "2026-07": "Jul" };
 
@@ -128,29 +130,50 @@ export function calcularCargaTributaria(mes, dreNodes, overrides) {
 // ANOMALIAS EM TODAS AS LINHAS DA DRE (totais e contas sintéticas,
 // mesmo as que ficam ocultas por padrão na árvore) — compara cada
 // linha, em cada mês, com a média dos 3 meses anteriores.
+//
+// Cada achado carrega o DELTA em R$ (valor do mês − média dos 3 meses
+// anteriores) além da variação %. É o delta que diz se a anomalia
+// importa: uma conta de média R$ 93 que foi para R$ 500 varia +438%,
+// mas move R$ 407 — ruído. O filtro "impacto mínimo" da tela usa
+// exatamente este campo.
+//
+// opcoes.porFechamento = compara valor POR FECHAMENTO (valor do mês ÷
+// nº de sextas-feiras do mês), para não acusar anomalia num mês de 5
+// fechamentos comparado a meses de 4.
 // ═══════════════════════════════════════════════════════════════════
-export function detectarAnomaliasTodasLinhas(dreNodes, overrides, limiarPct) {
+export function detectarAnomaliasTodasLinhas(dreNodes, overrides, limiarPct, opcoes = {}) {
+  const { porFechamento = false } = opcoes;
   const achados = [];
+
+  const normalizar = (valor, mes) => {
+    if (typeof valor !== "number" || Number.isNaN(valor)) return null;
+    if (!porFechamento) return valor;
+    const f = fechamentosNoMes(mes);
+    return f ? valor / f : null;
+  };
+
   for (const node of dreNodes) {
     for (let i = 0; i < MESES.length; i++) {
       if (i < 3) continue; // precisa de 3 meses anteriores pra comparar
       const mes = MESES[i];
-      const anteriores = MESES.slice(i - 3, i).map((m) => getValorNode(node, m, overrides));
+      const anteriores = MESES.slice(i - 3, i).map((m) => normalizar(getValorNode(node, m, overrides), m));
       const valido = anteriores.every((v) => typeof v === "number" && !Number.isNaN(v));
       if (!valido) continue;
-      const valorAtual = getValorNode(node, mes, overrides);
+      const valorAtual = normalizar(getValorNode(node, mes, overrides), mes);
       if (typeof valorAtual !== "number") continue;
       const media = anteriores.reduce((s, v) => s + v, 0) / anteriores.length;
       if (media === 0) continue;
-      const variacaoPct = round2(((valorAtual - media) / Math.abs(media)) * 100);
+      const delta = valorAtual - media;
+      const variacaoPct = round2((delta / Math.abs(media)) * 100);
       const absVar = Math.abs(variacaoPct);
       if (absVar <= limiarPct) continue;
       achados.push({
         mes, row: node.row, label: node.label, isTotal: node.level === 0,
-        valor: round2(valorAtual), media: round2(media), variacaoPct,
+        valor: round2(valorAtual), media: round2(media), delta: round2(delta), variacaoPct,
+        porFechamento,
         nivel: absVar > limiarPct * 2 ? "critico" : "atencao",
       });
     }
   }
-  return achados.sort((a, b) => Math.abs(b.variacaoPct) - Math.abs(a.variacaoPct));
+  return achados.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 }

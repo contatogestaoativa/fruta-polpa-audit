@@ -61,7 +61,6 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
   const [texto, setTexto] = useState(null);
   const [gerando, setGerando] = useState(false);
   const [erroIA, setErroIA] = useState(null);
-  const [truncado, setTruncado] = useState(false);
 
   const resumo = useMemo(
     () => calcularResumoDoMes({ dreNodes: DRE_NODES, mes, mesesFechados: meses, overrides, incluirMesAnalisado }),
@@ -75,23 +74,45 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
   });
 
   async function gerarResumo() {
-    setGerando(true); setErroIA(null); setTexto(null); setTruncado(false);
+    setGerando(true); setErroIA(null); setTexto(null);
     try {
       const r = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(montarPayloadIA(resumo, mesesLabel)),
       });
-      const ct = r.headers.get("content-type") || "";
-      if (!ct.includes("application/json")) {
-        // Vite servindo o index.html: a função não existe neste ambiente.
+      const tipo = r.headers.get("content-type") || "";
+
+      // Vite puro devolve o index.html — a função não existe neste ambiente.
+      if (tipo.includes("text/html")) {
         throw new Error("A função de IA não está disponível neste ambiente. Ela só responde no site publicado no Netlify, ou localmente rodando `netlify dev` em vez de `npm run dev`.");
       }
-      const dados = await r.json();
-      if (!r.ok) throw new Error(dados.mensagem || dados.erro || `Erro ${r.status}`);
-      setTexto(dados.texto);
-      setTruncado(Boolean(dados.truncado));
+      // Erro estruturado (chave, payload, limite) sai como JSON.
+      if (tipo.includes("application/json")) {
+        const dados = await r.json();
+        throw new Error(dados.mensagem || dados.erro || `Erro ${r.status}`);
+      }
+      if (!r.ok || !r.body) {
+        throw new Error(`O servidor respondeu ${r.status} sem conteúdo utilizável.`);
+      }
+
+      // Caminho normal: texto chegando em pedaços. Vai aparecendo na
+      // tela enquanto é escrito, em vez de meio minuto em branco.
+      const leitor = r.body.getReader();
+      const decoder = new TextDecoder();
+      let acumulado = "";
+      setTexto("");
+      for (;;) {
+        const { done, value } = await leitor.read();
+        if (done) break;
+        acumulado += decoder.decode(value, { stream: true });
+        setTexto(acumulado);
+      }
+      acumulado += decoder.decode();
+      if (!acumulado.trim()) throw new Error("O modelo não devolveu texto.");
+      setTexto(acumulado);
     } catch (e) {
+      setTexto(null);
       setErroIA(e.message);
     }
     setGerando(false);
@@ -157,7 +178,7 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
           {texto.split(/\n{2,}/).map((par, i) => (
             <p key={i} style={{ fontSize: 13.5, lineHeight: 1.75, color: T.text, marginBottom: 12, textAlign: "justify" }}>{par}</p>
           ))}
-          {truncado && <div style={{ fontSize: 11, color: T.warning }}>⚠ O texto foi cortado no limite de tokens.</div>}
+          {gerando && <div style={{ fontSize: 11, color: T.primary, fontWeight: 700 }}>✦ escrevendo…</div>}
           <div style={{ fontSize: 10, color: T.textMuted, marginTop: 8, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>
             Texto gerado por IA a partir dos números apurados abaixo. Os números não passam pelo modelo para serem calculados, só para serem narrados. Revise antes de mandar pra diretoria.
           </div>

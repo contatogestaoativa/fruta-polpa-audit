@@ -109,7 +109,18 @@ export default async (req) => {
   });
 
   try {
-    const resposta = await client.messages.create({
+    // ── STREAMING, de propósito ──────────────────────────────────────
+    // Uma função síncrona do Netlify é cortada bem antes dos ~27s que
+    // esta geração leva, e o cliente recebe 504. Com streaming os
+    // primeiros bytes saem em segundos, a conexão fica viva, e o texto
+    // ainda aparece sendo escrito na tela em vez de meio minuto em
+    // branco.
+    //
+    // Erro ANTES do primeiro byte (auth, payload, limite) ainda sai como
+    // JSON com status certo, que é o que o front sabe tratar. Depois que
+    // o stream abriu, o status já foi enviado e não dá mais pra mudá-lo,
+    // então um erro no meio vira uma marca no próprio texto.
+    const stream = client.messages.stream({
       model: MODELO,
       max_tokens: MAX_TOKENS,
       system: SISTEMA,
@@ -123,27 +134,38 @@ Comece direto pelo primeiro parágrafo, sem título e sem preâmbulo.`,
       }],
     });
 
-    if (resposta.stop_reason === "refusal") {
-      return json({ erro: "recusa", mensagem: "O modelo recusou a solicitação." }, 502);
-    }
+    // Espera o primeiro evento para que erros de autenticação e de
+    // requisição sejam capturados pelo catch abaixo, e não no meio do
+    // stream já aberto.
+    const iterador = stream[Symbol.asyncIterator]();
+    const primeiro = await iterador.next();
 
-    const texto = resposta.content
-      .filter((bloco) => bloco.type === "text")
-      .map((bloco) => bloco.text)
-      .join("\n")
-      .trim();
+    const corpo = new ReadableStream({
+      async start(controlador) {
+        const encoder = new TextEncoder();
+        const enviarTexto = (evento) => {
+          if (evento?.type === "content_block_delta" && evento.delta?.type === "text_delta") {
+            controlador.enqueue(encoder.encode(evento.delta.text));
+          }
+        };
+        try {
+          if (!primeiro.done) enviarTexto(primeiro.value);
+          for (let n = await iterador.next(); !n.done; n = await iterador.next()) {
+            enviarTexto(n.value);
+          }
+        } catch (erroNoMeio) {
+          controlador.enqueue(encoder.encode(`\n\n[A geração foi interrompida: ${String(erroNoMeio?.message || erroNoMeio)}]`));
+        }
+        controlador.close();
+      },
+    });
 
-    if (!texto) {
-      return json({ erro: "resposta_vazia", mensagem: "O modelo não devolveu texto." }, 502);
-    }
-
-    return json({
-      texto,
-      modelo: MODELO,
-      truncado: resposta.stop_reason === "max_tokens",
-      uso: {
-        entrada: resposta.usage?.input_tokens ?? null,
-        saida: resposta.usage?.output_tokens ?? null,
+    return new Response(corpo, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+        "X-Modelo": MODELO,
       },
     });
   } catch (erro) {

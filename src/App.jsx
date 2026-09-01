@@ -6,6 +6,7 @@ import { AnomalyBadge, StatCard } from "./components/AnomalyBadge.jsx";
 import DreHierarquica from "./components/DreHierarquica.jsx";
 import AnaliseTrimestral from "./components/AnaliseTrimestral.jsx";
 import ComparativoPeriodos from "./components/ComparativoPeriodos.jsx";
+import ResumoDoMes from "./components/ResumoDoMes.jsx";
 import { parseAnaliseTrimestral, ehArquivoAnaliseTrimestral } from "./lib/parsers/analiseTrimestral.js";
 import { parseDescontosConcedidos, detectarNotasDuplicadas } from "./lib/parsers/descontosConcedidos.js";
 import { parseGrupo222, detectarMesPredominante } from "./lib/parsers/grupo222.js";
@@ -24,6 +25,7 @@ const TABS = [
   { id: "import", label: "Importar" },
   { id: "dre", label: "DRE" },
   { id: "comparativo", label: "Comparativo" },
+  { id: "resumo", label: "Resumo do Mês" },
   { id: "reconciliacao", label: "Reconciliação" },
   { id: "anomalias", label: "Anomalias" },
   { id: "impostos", label: "Receita x Lucro x Impostos" },
@@ -328,6 +330,7 @@ export default function App() {
           </div>
         )}
         {activeTab === "comparativo" && <ComparativoPeriodos T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
+        {activeTab === "resumo" && <ResumoDoMes T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
         {activeTab === "reconciliacao" && (hasData ? <ReconciliacaoTab T={T} historico={historico} regime={regime} /> : <EmptyState T={T} onGoImport={() => setActiveTab("import")} />)}
         {activeTab === "anomalias" && <AnomaliasTab T={T} limiarPct={limiarPct} setLimiarPct={setLimiarPct} overrides={overrides} />}
         {activeTab === "impostos" && <ImpostosTab T={T} overrides={overrides} />}

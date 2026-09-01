@@ -156,3 +156,92 @@ export async function carregarHistoricoDre() {
   }
   return historico;
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// HISTÓRICO DOS RESUMOS MENSAIS GERADOS POR IA
+// Nada é sobrescrito: cada geração vira uma linha nova. Se a base for
+// corrigida e o resumo for gerado de novo, as duas versões continuam
+// disponíveis — a antiga explica o que foi apresentado à diretoria
+// naquela data, a nova mostra o quadro corrigido.
+// Requer a tabela criada por migracao-resumos-mensais.sql.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Salva um resumo recém-gerado. Silencioso quando não há Supabase. */
+export async function salvarResumoMensal({ mesReferencia, texto, modelo, parametros }) {
+  if (!supabase) return { ok: false, motivo: "supabase-nao-configurado" };
+  const { data: sessionData } = await supabase.auth.getSession();
+  const usuarioId = sessionData?.session?.user?.id || null;
+
+  const { data, error } = await supabase
+    .from("resumos_mensais")
+    .insert({
+      mes_referencia: `${mesReferencia}-01`,
+      texto,
+      modelo: modelo || null,
+      parametros: parametros || null,
+      gerado_por: usuarioId,
+    })
+    .select("id, gerado_em")
+    .single();
+
+  if (error) return { ok: false, motivo: error.message };
+  return { ok: true, id: data.id, geradoEm: data.gerado_em };
+}
+
+/**
+ * Lista os resumos já gerados, do mais recente para o mais antigo.
+ * Passe `mes` ("2026-07") para filtrar por mês; sem ele, traz todos.
+ * Devolve lista vazia se a tabela ainda não existir — assim a tela
+ * continua funcionando antes de a migração ser aplicada.
+ */
+export async function listarResumosMensais(mes) {
+  if (!supabase) return { ok: false, motivo: "supabase-nao-configurado", resumos: [] };
+
+  let consulta = supabase
+    .from("resumos_mensais")
+    .select("id, mes_referencia, gerado_em, modelo, perfis:gerado_por(nome)")
+    .order("gerado_em", { ascending: false })
+    .limit(100);
+
+  if (mes) consulta = consulta.eq("mes_referencia", `${mes}-01`);
+
+  const { data, error } = await consulta;
+  if (error) {
+    // Tabela ainda não criada: não é erro de uso, é migração pendente.
+    const migracaoPendente = /relation .* does not exist|schema cache/i.test(error.message);
+    return { ok: false, motivo: error.message, migracaoPendente, resumos: [] };
+  }
+  return {
+    ok: true,
+    resumos: (data || []).map((r) => ({
+      id: r.id,
+      mes: String(r.mes_referencia).slice(0, 7),
+      geradoEm: r.gerado_em,
+      modelo: r.modelo,
+      geradoPor: r.perfis?.nome || null,
+    })),
+  };
+}
+
+/** Carrega o texto completo de um resumo salvo. */
+export async function carregarResumoMensal(id) {
+  if (!supabase) return { ok: false, motivo: "supabase-nao-configurado" };
+  const { data, error } = await supabase
+    .from("resumos_mensais")
+    .select("id, mes_referencia, gerado_em, texto, modelo, parametros, perfis:gerado_por(nome)")
+    .eq("id", id)
+    .single();
+  if (error) return { ok: false, motivo: error.message };
+  return {
+    ok: true,
+    resumo: {
+      id: data.id,
+      mes: String(data.mes_referencia).slice(0, 7),
+      geradoEm: data.gerado_em,
+      texto: data.texto,
+      modelo: data.modelo,
+      parametros: data.parametros,
+      geradoPor: data.perfis?.nome || null,
+    },
+  };
+}

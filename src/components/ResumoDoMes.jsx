@@ -1,6 +1,7 @@
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, useEffect, Fragment } from "react";
 import { DRE_NODES } from "../lib/dreNodes.js";
 import { calcularResumoDoMes, montarPayloadIA, MAX_JANELA } from "../lib/resumoMensal.js";
+import { persistenceEnabled, salvarResumoMensal, listarResumosMensais, carregarResumoMensal } from "../lib/supabaseClient.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // RESUMO DO MÊS (demanda Gerson, 01/09/2026)
@@ -42,6 +43,13 @@ function fmtDeltaPct(n) {
   return sinal + Math.abs(n * 100).toFixed(2) + "%";
 }
 
+function fmtDataHora(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
 function agruparSecoes(nodes) {
   const secoes = [];
   let atual = null;
@@ -62,6 +70,28 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
   const [gerando, setGerando] = useState(false);
   const [erroIA, setErroIA] = useState(null);
 
+  // ── histórico de resumos já gerados (Supabase) ──
+  const [salvos, setSalvos] = useState([]);
+  const [migracaoPendente, setMigracaoPendente] = useState(false);
+  const [vendoSalvo, setVendoSalvo] = useState(null); // metadados quando se abre uma versão antiga
+  const [statusSalvamento, setStatusSalvamento] = useState(null);
+
+  async function recarregarSalvos(mesAlvo) {
+    if (!persistenceEnabled) return;
+    const r = await listarResumosMensais(mesAlvo);
+    setSalvos(r.resumos || []);
+    setMigracaoPendente(Boolean(r.migracaoPendente));
+  }
+  useEffect(() => { recarregarSalvos(mes); }, [mes]);
+
+  async function abrirSalvo(id) {
+    setErroIA(null);
+    const r = await carregarResumoMensal(id);
+    if (!r.ok) { setErroIA(`Não consegui abrir esse resumo: ${r.motivo}`); return; }
+    setTexto(r.resumo.texto);
+    setVendoSalvo(r.resumo);
+  }
+
   const resumo = useMemo(
     () => calcularResumoDoMes({ dreNodes: DRE_NODES, mes, mesesFechados: meses, overrides, incluirMesAnalisado }),
     [mes, meses, overrides, incluirMesAnalisado]
@@ -74,7 +104,7 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
   });
 
   async function gerarResumo() {
-    setGerando(true); setErroIA(null); setTexto(null);
+    setGerando(true); setErroIA(null); setTexto(null); setVendoSalvo(null); setStatusSalvamento(null);
     try {
       const r = await fetch(ENDPOINT, {
         method: "POST",
@@ -111,6 +141,23 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
       acumulado += decoder.decode();
       if (!acumulado.trim()) throw new Error("O modelo não devolveu texto.");
       setTexto(acumulado);
+
+      // Guarda a versão recém-gerada junto com os parâmetros que a
+      // produziram. Falhar aqui não invalida o resumo na tela.
+      if (persistenceEnabled) {
+        const gravado = await salvarResumoMensal({
+          mesReferencia: mes,
+          texto: acumulado,
+          modelo: r.headers.get("x-modelo"),
+          parametros: montarPayloadIA(resumo, mesesLabel),
+        });
+        if (gravado.ok) {
+          setStatusSalvamento({ ok: true, em: gravado.geradoEm });
+          recarregarSalvos(mes);
+        } else {
+          setStatusSalvamento({ ok: false, motivo: gravado.motivo });
+        }
+      }
     } catch (e) {
       setTexto(null);
       setErroIA(e.message);
@@ -134,7 +181,7 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
       {/* ── Controles ───────────────────────────────────────────── */}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
         <label style={{ fontSize: 12, color: T.textSub, display: "flex", alignItems: "center", gap: 8 }}>Mês analisado:
-          <select value={mes} onChange={(e) => { setMes(e.target.value); setTexto(null); setErroIA(null); }}
+          <select value={mes} onChange={(e) => { setMes(e.target.value); setTexto(null); setErroIA(null); setVendoSalvo(null); setStatusSalvamento(null); }}
             style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "5px 10px", fontSize: 12 }}>
             {meses.map((m) => <option key={m} value={m}>{mesesLabel[m] || m}</option>)}
           </select>
@@ -172,8 +219,19 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
       )}
       {texto && (
         <div style={{ border: `1px solid ${T.border}`, background: T.card, borderRadius: 10, padding: "18px 22px", marginBottom: 24, maxWidth: 900 }}>
-          <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, marginBottom: 10, letterSpacing: 0.5 }}>
-            RESUMO DE RESULTADO · {(mesesLabel[mes] || mes).toUpperCase()}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+            <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: 0.5 }}>
+              RESUMO DE RESULTADO · {(mesesLabel[mes] || mes).toUpperCase()}
+            </div>
+            {vendoSalvo
+              ? <div style={{ fontSize: 10, color: T.gold, fontWeight: 700 }}>
+                  ⏱ VERSÃO SALVA · gerada em {fmtDataHora(vendoSalvo.geradoEm)}{vendoSalvo.geradoPor ? ` por ${vendoSalvo.geradoPor}` : ""}
+                </div>
+              : statusSalvamento
+                ? <div style={{ fontSize: 10, fontWeight: 700, color: statusSalvamento.ok ? T.leaf : T.warning }}>
+                    {statusSalvamento.ok ? `✓ salvo no histórico em ${fmtDataHora(statusSalvamento.em)}` : `⚠ gerado mas não salvo: ${statusSalvamento.motivo}`}
+                  </div>
+                : null}
           </div>
           {texto.split(/\n{2,}/).map((par, i) => (
             <p key={i} style={{ fontSize: 13.5, lineHeight: 1.75, color: T.text, marginBottom: 12, textAlign: "justify" }}>{par}</p>
@@ -182,6 +240,51 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
           <div style={{ fontSize: 10, color: T.textMuted, marginTop: 8, borderTop: `1px solid ${T.border}`, paddingTop: 8 }}>
             Texto gerado por IA a partir dos números apurados abaixo. Os números não passam pelo modelo para serem calculados, só para serem narrados. Revise antes de mandar pra diretoria.
           </div>
+        </div>
+      )}
+
+      {/* ── Histórico de resumos gerados ────────────────────────── */}
+      {persistenceEnabled && (
+        <div style={{ marginBottom: 26 }}>
+          <h2 style={{ fontFamily: T.fontDisplay, fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Resumos já gerados</h2>
+          <p style={{ color: T.textMuted, fontSize: 12, marginBottom: 10, maxWidth: 780 }}>
+            Cada geração fica guardada com data e hora. Se a base for corrigida e você gerar de novo, a versão anterior continua aqui: ela é o registro do que foi apresentado à diretoria naquela data.
+          </p>
+          {migracaoPendente ? (
+            <div style={{ border: `1px solid ${T.warning}55`, background: T.goldDim, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: T.textSub, maxWidth: 780 }}>
+              ⚠ A tabela do histórico ainda não existe neste banco. Rode <b>migracao-resumos-mensais.sql</b> no SQL Editor do Supabase. Até lá, o resumo é gerado normalmente mas não fica salvo.
+            </div>
+          ) : salvos.length === 0 ? (
+            <div style={{ color: T.textMuted, fontSize: 12 }}>Nenhum resumo salvo para {mesesLabel[mes]} ainda.</div>
+          ) : (
+            <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: "hidden" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead><tr>
+                  <th style={th(T)}>Gerado em</th>
+                  <th style={th(T)}>Por</th>
+                  <th style={th(T)}>Modelo</th>
+                  <th style={{ ...th(T), textAlign: "right" }}></th>
+                </tr></thead>
+                <tbody>
+                  {salvos.map((r, i) => (
+                    <tr key={r.id} style={{ background: vendoSalvo?.id === r.id ? T.goldDim : "transparent" }}>
+                      <td style={{ ...td(T), fontWeight: 700, whiteSpace: "nowrap" }}>
+                        {fmtDataHora(r.geradoEm)}
+                        {i === 0 && <span style={{ marginLeft: 8, fontSize: 9, color: T.leaf, border: `1px solid ${T.leaf}55`, borderRadius: 4, padding: "1px 5px" }}>MAIS RECENTE</span>}
+                      </td>
+                      <td style={{ ...td(T), color: T.textSub }}>{r.geradoPor || "—"}</td>
+                      <td style={{ ...td(T), color: T.textMuted, fontSize: 11 }}>{r.modelo || "—"}</td>
+                      <td style={{ ...td(T), textAlign: "right" }}>
+                        <button onClick={() => abrirSalvo(r.id)} style={btnMini(T)}>
+                          {vendoSalvo?.id === r.id ? "✓ aberto" : "Abrir"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -208,7 +311,7 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
       {/* ── 2. Itens e variações ────────────────────────────────── */}
       <h2 style={{ fontFamily: T.fontDisplay, fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Itens e variações que explicam o resultado</h2>
       <p style={{ color: T.textMuted, fontSize: 12, marginBottom: 10, maxWidth: 780 }}>
-        As 15 contas analíticas que mais afastaram {mesesLabel[mes]} da média, ordenadas por impacto em R$. É daqui que sai a explicação do mês.
+        As 15 contas analíticas que mais afastaram {mesesLabel[mes]} da média, ordenadas por impacto em R$. Leia as três últimas colunas antes das de reais: <b>custo e despesa se analisam em percentual da receita</b>, porque em reais a variação de volume se mistura com a de eficiência. A coluna <b>Δ p.p.</b> é a que diz se a operação piorou.
       </p>
       <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: "auto", marginBottom: 28 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -217,7 +320,9 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
             <th style={{ ...th(T), textAlign: "right" }}>{mesesLabel[mes]}</th>
             <th style={{ ...th(T), textAlign: "right" }}>Média ({resumo.mesesNaJanela}m)</th>
             <th style={{ ...th(T), textAlign: "right", color: T.gold }}>Diferença (R$)</th>
-            <th style={{ ...th(T), textAlign: "right" }}>Var. %</th>
+            <th style={{ ...th(T), textAlign: "right" }} title="A linha como % da Receita dos Produtos Vendidos no mês">% no mês</th>
+            <th style={{ ...th(T), textAlign: "right" }} title="A linha como % da receita acumulada da janela">% médio</th>
+            <th style={{ ...th(T), textAlign: "right", color: T.gold }} title="Diferença entre os dois percentuais. É esta coluna que diz se a operação piorou, porque neutraliza a variação de volume.">Δ p.p.</th>
           </tr></thead>
           <tbody>
             {resumo.explicacoes.map((c) => (
@@ -227,10 +332,12 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
                 <td style={{ ...td(T), textAlign: "right", whiteSpace: "nowrap" }}>{fmtMoedaCurta(c.valor)}</td>
                 <td style={{ ...td(T), textAlign: "right", whiteSpace: "nowrap", color: T.textSub }}>{fmtMoedaCurta(c.media)}</td>
                 <td style={{ ...td(T), textAlign: "right", fontWeight: 700, whiteSpace: "nowrap", color: c.delta >= 0 ? T.leaf : T.danger }}>{fmtDeltaMoeda(c.delta)}</td>
-                <td style={{ ...td(T), textAlign: "right", whiteSpace: "nowrap", color: T.textMuted }}>{fmtDeltaPct(c.deltaPct)}</td>
+                <td style={{ ...td(T), textAlign: "right", whiteSpace: "nowrap", color: T.textSub }}>{fmtPctFracao(c.pctMes)}</td>
+                <td style={{ ...td(T), textAlign: "right", whiteSpace: "nowrap", color: T.textMuted }}>{fmtPctFracao(c.pctMedia)}</td>
+                <td style={{ ...td(T), textAlign: "right", whiteSpace: "nowrap", fontWeight: 700, color: c.deltaPP === null ? T.textMuted : c.deltaPP >= 0 ? T.leaf : T.danger }}>{fmtDeltaPP(c.deltaPP)}</td>
               </tr>
             ))}
-            {resumo.explicacoes.length === 0 && <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: T.textMuted }}>Sem variação relevante contra a média.</td></tr>}
+            {resumo.explicacoes.length === 0 && <tr><td colSpan={8} style={{ padding: 18, textAlign: "center", color: T.textMuted }}>Sem variação relevante contra a média.</td></tr>}
           </tbody>
         </table>
       </div>

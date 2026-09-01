@@ -73,6 +73,21 @@ export function mediaDaLinha(node, janela, overrides, porRow) {
   return somaBruta(node, janela, overrides) / janela.length;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// ANÁLISE VERTICAL (% sobre a base)
+// Regra do Gerson, 01/09/2026: linha de custo e despesa NUNCA se compara
+// só em R$. CPV de R$ 3,58 mi sobre receita de R$ 9,7 mi não é
+// comparável a CPV de R$ 2,6 mi sobre receita de R$ 7,9 mi — em reais
+// "estourou", em percentual a conversa é outra. O que diz se a operação
+// piorou é o percentual, e a diferença entre dois percentuais se
+// expressa em PONTOS PERCENTUAIS.
+//
+// Base, seguindo a mesma regra da aba DRE:
+//   linhas < 201  -> Receita dos Produtos Vendidos (linha 4)
+//   linhas >= 201 -> Faturamento Gerencial (linha 201)
+// ═══════════════════════════════════════════════════════════════════
+function linhaBaseDe(row) { return row < 201 ? 4 : 201; }
+
 /** Valor da linha no mês analisado (mesma unidade da média). */
 export function valorDoMes(node, mes, overrides) {
   const v = getValorNode(node, mes, overrides);
@@ -86,11 +101,28 @@ export function compararLinha(node, mes, janela, overrides, porRow) {
   const media = mediaDaLinha(node, janela, overrides, porRow);
   const delta = (valor === null || media === null) ? null : valor - media;
   const deltaPct = (delta === null || !media) ? null : delta / Math.abs(media);
+
+  // ── percentual sobre a base (não se aplica a linhas que já são %) ──
+  let pctMes = null, pctMedia = null, deltaPP = null;
+  if (!ehPct) {
+    const base = porRow[linhaBaseDe(node.row)];
+    if (base) {
+      const baseMes = valorDoMes(base, mes, overrides);
+      if (baseMes) pctMes = valor / baseMes;
+      const baseJanela = somaBruta(base, janela, overrides);
+      if (baseJanela) pctMedia = somaBruta(node, janela, overrides) / baseJanela;
+      if (pctMes !== null && pctMedia !== null) deltaPP = pctMes - pctMedia;
+    }
+  }
+
   return {
     row: node.row, label: node.label, conta: node.conta, level: node.level,
     ehPct, valor, media,
     delta: delta === null ? null : (ehPct ? delta : round2(delta)),
     deltaPct,
+    // percentual da linha sobre a receita (ou sobre o faturamento
+    // gerencial, no bloco gerencial), e a diferença em pontos percentuais
+    pctMes, pctMedia, deltaPP,
     atingiu: delta === null ? null : delta >= 0,
   };
 }
@@ -178,6 +210,13 @@ export function montarPayloadIA(resumo, mesesLabel) {
     media: c.media,
     diferenca: c.delta,
     variacaoPct: c.deltaPct,
+    // Análise vertical: é ESTA leitura que diz se a operação piorou,
+    // porque neutraliza a diferença de volume entre os meses.
+    ...(c.ehPct ? {} : {
+      percentualSobreReceitaNoMes: c.pctMes,
+      percentualSobreReceitaNaMedia: c.pctMedia,
+      diferencaEmPontosPercentuais: c.deltaPP,
+    }),
   });
 
   return {
@@ -200,5 +239,10 @@ export function montarPayloadIA(resumo, mesesLabel) {
       diferencaEmPontosPercentuais: resumo.margemBruta.deltaPP,
     },
     contasQueExplicam: resumo.explicacoes.map(fmtLinha),
+    comoLerEstesNumeros:
+      "Toda conta de custo e despesa traz percentualSobreReceitaNoMes e percentualSobreReceitaNaMedia. " +
+      "Comparar essas duas é o que diz se a operação piorou; a diferença entre elas está em " +
+      "diferencaEmPontosPercentuais. A diferença em reais mistura variação de volume com variação de " +
+      "eficiência e sozinha engana.",
   };
 }

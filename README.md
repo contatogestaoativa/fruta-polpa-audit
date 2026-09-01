@@ -6,7 +6,26 @@
 - **Import inteligente**: detecta automaticamente lote (arquivo com uma aba por mês) vs. mês único, e detecta o mês pelo conteúdo quando aplicável.
 - **Reconciliação**: compara todo valor importado contra o número já validado manualmente na auditoria.
 - **Toggle Competência/Caixa** (afeta hoje a linha 138) e **tema Claro/Escuro**.
-- **Detecção de anomalia** configurável (variação % vs. média dos últimos 3 meses).
+- **Detecção de anomalia** configurável (variação % vs. média dos últimos 3 meses), com **coluna de diferença em R$**, filtro de **impacto mínimo** e opção de comparar **por fechamento**.
+- **Comparativo de Períodos**: escolhe dois meses (ou dois intervalos) quaisquer e mostra a DRE inteira lado a lado, com diferença em R$, em % e análise vertical dos dois lados.
+- **Fechamentos do mês** (= sextas-feiras) na DRE, no Comparativo e nas Anomalias, com opção de ver todos os números normalizados por fechamento.
+
+### Anomalias — % e R$ juntos
+A sensibilidade (%) diz *o quanto* a conta se moveu; o impacto mínimo (R$) diz se esse movimento *vale a conversa*. Uma conta de média R$ 93 que foi para R$ 500 varia +438% e move R$ 407 — com impacto mínimo em R$ 5.000 ela sai da lista. A coluna **Diferença (R$)** é o delta entre o valor do mês e a média dos 3 meses anteriores, e é por ela que a lista vem ordenada por padrão.
+
+### Comparativo de Períodos
+Três bases de comparação, porque comparar períodos de tamanhos diferentes em valor cheio distorce a leitura:
+
+| Base | O que faz | Quando usar |
+|---|---|---|
+| Total | soma pura do período | períodos do mesmo tamanho |
+| Média mensal | soma ÷ nº de meses | 1 mês × 1 trimestre |
+| Por fechamento | soma ÷ nº de sextas-feiras | qualquer comparação de volume |
+
+A tela avisa quando os dois períodos se sobrepõem ou têm tamanhos diferentes com a base em "Total".
+
+### Fechamentos (sextas-feiras)
+O número de fechamentos de um mês é a quantidade de sextas-feiras dele — uma variável de volume: um mês com 5 sextas tem capacidade de faturamento estruturalmente maior que um de 4. Em 2026: Jan 5 · Fev 4 · Mar 4 · Abr 4 · Mai 5 · Jun 4 · Jul 5. A regra vive em `src/lib/fechamentos.js` e é usada na DRE (botão "Por fechamento"), no Comparativo (base de comparação) e nas Anomalias (checkbox "Por fechamento", que evita acusar anomalia num mês de 5 fechamentos contra meses de 4).
 
 ## Pendente (falta amostra real de dados para automatizar)
 - Rotina 2122 (DRE contábil bruta) e Rotina 1464 (Faturamento Gerencial) — hoje usam valor de referência da auditoria manual.
@@ -91,8 +110,12 @@ src/
     dreNodes.js               ← as 186 linhas reais da DRE (analítico + comentários)
     supabaseClient.js         ← conexão e função de importarLote()
     parsers/                  ← as regras de cada rotina (138, 209, 211, anomalia)
+  lib/
+    fechamentos.js            ← nº de fechamentos do mês (= sextas-feiras)
   components/
     DreHierarquica.jsx        ← árvore da DRE com mostrar/ocultar e notas
+    ComparativoPeriodos.jsx   ← comparativo entre dois períodos quaisquer
+    AnaliseTrimestral.jsx     ← comparativo 2025 x 2026 por trimestre
     Logo.jsx, AnomalyBadge.jsx
 schema.sql                    ← script para rodar no Supabase SQL Editor
 ```

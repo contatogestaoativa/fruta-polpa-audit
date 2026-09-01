@@ -155,7 +155,8 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
           setStatusSalvamento({ ok: true, em: gravado.geradoEm });
           recarregarSalvos(mes);
         } else {
-          setStatusSalvamento({ ok: false, motivo: gravado.motivo });
+          setStatusSalvamento({ ok: false, motivo: gravado.motivo, migracaoPendente: gravado.migracaoPendente });
+          if (gravado.migracaoPendente) setMigracaoPendente(true);
         }
       }
     } catch (e) {
@@ -229,7 +230,11 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
                 </div>
               : statusSalvamento
                 ? <div style={{ fontSize: 10, fontWeight: 700, color: statusSalvamento.ok ? T.leaf : T.warning }}>
-                    {statusSalvamento.ok ? `✓ salvo no histórico em ${fmtDataHora(statusSalvamento.em)}` : `⚠ gerado mas não salvo: ${statusSalvamento.motivo}`}
+                    {statusSalvamento.ok
+                      ? `✓ salvo no histórico em ${fmtDataHora(statusSalvamento.em)}`
+                      : statusSalvamento.migracaoPendente
+                        ? "⚠ gerado, mas ainda não fica salvo — falta criar a tabela do histórico (veja o aviso abaixo)"
+                        : `⚠ gerado mas não salvo: ${statusSalvamento.motivo}`}
                   </div>
                 : null}
           </div>

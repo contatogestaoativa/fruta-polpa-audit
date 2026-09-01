@@ -166,6 +166,11 @@ export async function carregarHistoricoDre() {
 // Requer a tabela criada por migracao-resumos-mensais.sql.
 // ═══════════════════════════════════════════════════════════════════
 
+/** A tabela ainda não foi criada? (mensagens variam entre PostgREST e Postgres) */
+function tabelaAindaNaoExiste(mensagem) {
+  return /relation .* does not exist|schema cache|could not find the table/i.test(mensagem || "");
+}
+
 /** Salva um resumo recém-gerado. Silencioso quando não há Supabase. */
 export async function salvarResumoMensal({ mesReferencia, texto, modelo, parametros }) {
   if (!supabase) return { ok: false, motivo: "supabase-nao-configurado" };
@@ -184,7 +189,15 @@ export async function salvarResumoMensal({ mesReferencia, texto, modelo, paramet
     .select("id, gerado_em")
     .single();
 
-  if (error) return { ok: false, motivo: error.message };
+  if (error) {
+    // Erro mais provável aqui é a migração ainda não aplicada. O texto
+    // cru do Postgres ("schema cache") não diz nada a quem usa o
+    // sistema, então traduzimos pra ação.
+    if (tabelaAindaNaoExiste(error.message)) {
+      return { ok: false, migracaoPendente: true, motivo: "a tabela do histórico ainda não existe neste banco (falta rodar migracao-resumos-mensais.sql)" };
+    }
+    return { ok: false, motivo: error.message };
+  }
   return { ok: true, id: data.id, geradoEm: data.gerado_em };
 }
 
@@ -208,8 +221,7 @@ export async function listarResumosMensais(mes) {
   const { data, error } = await consulta;
   if (error) {
     // Tabela ainda não criada: não é erro de uso, é migração pendente.
-    const migracaoPendente = /relation .* does not exist|schema cache/i.test(error.message);
-    return { ok: false, motivo: error.message, migracaoPendente, resumos: [] };
+    return { ok: false, motivo: error.message, migracaoPendente: tabelaAindaNaoExiste(error.message), resumos: [] };
   }
   return {
     ok: true,

@@ -9,8 +9,16 @@
 // calculados e conferidos no cliente (src/lib/resumoMensal.js). O modelo
 // só escreve a narrativa em cima deles.
 //
-// Variável de ambiente exigida no Netlify:
-//   ANTHROPIC_API_KEY_FRUTAPOLPA  (ou ANTHROPIC_API_KEY como alternativa)
+// Variáveis de ambiente no Netlify:
+//   ANTHROPIC_API_KEY_FRUTAPOLPA  (obrigatória; ou ANTHROPIC_API_KEY)
+//   ANTHROPIC_WORKSPACE_ID        (só para chave "identity-linked")
+//
+// Existem dois tipos de chave na Anthropic. A clássica é presa a um
+// workspace e funciona sozinha. A "identity-linked" é ligada à sua
+// identidade e exige o cabeçalho anthropic-workspace-id dizendo em qual
+// workspace a requisição age — sem ele a API devolve 400. O id do
+// workspace NÃO é segredo (é um identificador), então pode ser uma
+// variável comum, sem marcar como secret.
 // ═══════════════════════════════════════════════════════════════════
 
 import Anthropic from "@anthropic-ai/sdk";
@@ -72,7 +80,11 @@ export default async (req) => {
     return json({ erro: "payload_incompleto", mensagem: "Faltam os dados do mês no corpo da requisição." }, 400);
   }
 
-  const client = new Anthropic({ apiKey });
+  const workspaceId = (process.env.ANTHROPIC_WORKSPACE_ID || "").trim();
+  const client = new Anthropic({
+    apiKey,
+    ...(workspaceId ? { defaultHeaders: { "anthropic-workspace-id": workspaceId } } : {}),
+  });
 
   try {
     const resposta = await client.messages.create({
@@ -131,6 +143,14 @@ Comece direto pelo primeiro parágrafo, sem título e sem preâmbulo.`,
       return json({ erro: "limite", mensagem: "Limite de requisições atingido. Tente de novo em alguns instantes." }, 429);
     }
     if (erro instanceof Anthropic.BadRequestError) {
+      // Caso específico e fácil de resolver: chave identity-linked sem
+      // o workspace declarado.
+      if (/anthropic-workspace-id/i.test(erro.message || "")) {
+        return json({
+          erro: "workspace_ausente",
+          mensagem: "A chave configurada é do tipo identity-linked e exige saber em qual workspace agir. Configure a variável ANTHROPIC_WORKSPACE_ID no Netlify com o id do workspace (ele aparece na URL do console.anthropic.com). Não precisa marcar como secret.",
+        }, 400);
+      }
       return json({ erro: "requisicao_invalida", mensagem: erro.message }, 400);
     }
     if (erro instanceof Anthropic.APIError) {

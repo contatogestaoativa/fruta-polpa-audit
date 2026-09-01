@@ -148,6 +148,12 @@ Comece direto pelo primeiro parágrafo, sem título e sem preâmbulo.`,
           variavelUsada: process.env.ANTHROPIC_API_KEY_FRUTAPOLPA ? "ANTHROPIC_API_KEY_FRUTAPOLPA" : "ANTHROPIC_API_KEY",
           impressaoDigitalDaChave: impressaoDigital(apiKey),
           workspaceConfigurado: workspaceId || null,
+          // Mensagem crua da Anthropic — é ela que diz o motivo real.
+          // Não contém a chave.
+          mensagemDaApi: erro.message || null,
+          statusDaApi: erro.status ?? null,
+          requestId: erro.request_id || erro.requestID || null,
+          runtime: process.version,
         },
       }, 502);
     }

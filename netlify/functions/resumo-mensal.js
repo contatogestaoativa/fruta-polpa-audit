@@ -50,7 +50,10 @@ export default async (req) => {
     return json({ erro: "Use POST." }, 405);
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY_FRUTAPOLPA || process.env.ANTHROPIC_API_KEY;
+  // .trim() de propósito: colar a chave no painel do Netlify costuma
+  // trazer espaço ou quebra de linha junto, e aí a API devolve 401.
+  const apiKeyBruta = process.env.ANTHROPIC_API_KEY_FRUTAPOLPA || process.env.ANTHROPIC_API_KEY || "";
+  const apiKey = apiKeyBruta.trim();
   if (!apiKey) {
     return json({
       erro: "chave_ausente",
@@ -111,7 +114,18 @@ Comece direto pelo primeiro parágrafo, sem título e sem preâmbulo.`,
     });
   } catch (erro) {
     if (erro instanceof Anthropic.AuthenticationError) {
-      return json({ erro: "chave_invalida", mensagem: "A chave da API foi recusada. Confira o valor de ANTHROPIC_API_KEY_FRUTAPOLPA." }, 502);
+      // Diagnóstico que NÃO revela a chave: só o formato dela. Serve pra
+      // distinguir "colei errado/truncado" de "a chave foi revogada".
+      return json({
+        erro: "chave_invalida",
+        mensagem: "A chave da API foi recusada pela Anthropic (401). Confira o valor de ANTHROPIC_API_KEY_FRUTAPOLPA.",
+        diagnostico: {
+          comecaComPrefixoEsperado: apiKey.startsWith("sk-ant-"),
+          tamanho: apiKey.length,
+          tinhaEspacoOuQuebraDeLinha: apiKeyBruta !== apiKey,
+          variavelUsada: process.env.ANTHROPIC_API_KEY_FRUTAPOLPA ? "ANTHROPIC_API_KEY_FRUTAPOLPA" : "ANTHROPIC_API_KEY",
+        },
+      }, 502);
     }
     if (erro instanceof Anthropic.RateLimitError) {
       return json({ erro: "limite", mensagem: "Limite de requisições atingido. Tente de novo em alguns instantes." }, 429);

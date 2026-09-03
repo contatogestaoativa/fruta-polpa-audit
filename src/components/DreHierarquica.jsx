@@ -71,10 +71,12 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
   }
   function pctSobre(node, mes) {
     if (PCT_ROWS.has(node.row)) return null; // já é % — não faz sentido % de %
-    // Bloco contábil (linhas < 201): % sobre a Receita dos Produtos Vendidos (linha 4)
-    // Bloco gerencial (linhas >= 201): % sobre o Faturamento Gerencial (linha 201)
+    // Sempre sobre a Receita dos Produtos Vendidos (linha 4), tanto no
+    // bloco contábil quanto no gerencial. (As linhas de Lucratividade —
+    // 204/214/219 — têm fórmula própria, sobre Faturamento Gerencial —
+    // linha 201 — e não passam por aqui, ver PCT_ROWS acima.)
     // (o % não muda com "por fechamento" — é razão entre duas linhas do mesmo mês)
-    const base = node.row < 201 ? REF.receitaBruta[mes] : REF.faturamentoGerencial[mes];
+    const base = REF.receitaBruta[mes];
     const valor = valorBruto(node, mes);
     if (!base || valor === null || valor === undefined) return null;
     return (valor / base) * 100;
@@ -100,9 +102,8 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
   }
   function totalPctSobre(node) {
     if (PCT_ROWS.has(node.row)) return null;
-    const base = node.row < 201 ? totalReceitaBruta : totalFatGerencial;
-    if (!base) return null;
-    return (somaBrutaDaLinha(node) / base) * 100;
+    if (!totalReceitaBruta) return null;
+    return (somaBrutaDaLinha(node) / totalReceitaBruta) * 100;
   }
 
   return (

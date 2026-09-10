@@ -76,3 +76,32 @@ function toDate(v) {
   return null;
 }
 function round2(n) { return Math.round(n * 100) / 100; }
+
+/**
+ * COMPETÊNCIA COMPLETA (mês a mês, não só ano) — validado contra a
+ * planilha "APROPRIAÇÃO DESCONTOS" que a própria gestão monta manualmente:
+ * bate exato em 5 dos 7 meses (Jan, Fev, Mar, Jun, Jul); Abr e Mai têm
+ * uma diferença de ~R$ 15.968,69 nos dois, provavelmente um ajuste
+ * manual pontual que vale confirmar com o Pedro antes de adotar esta
+ * função no lugar da regra atual (só reverte contaminação entre anos).
+ *
+ * Reatribui cada título ao seu mês de competência real (via DATA 1008),
+ * não ao mês em que foi baixado — funciona com os MESMOS dados que já
+ * importamos (2107+1008), não precisa de nenhum arquivo novo.
+ */
+export function parseDescontosConcedidosCompetenciaPura(rows) {
+  const porMesCompetencia = {};
+  for (const row of rows) {
+    const data = toDate(row.DATA);
+    const data1008 = toDate(row["DATA 1008"]);
+    if (!data || !data1008) continue; // sem 1008 = não dá pra saber a competência real, fica de fora (mesmo critério validado)
+    const valor = Number(row.VALOR) || 0;
+    const mesComp = `${data1008.getFullYear()}-${String(data1008.getMonth() + 1).padStart(2, "0")}`;
+    porMesCompetencia[mesComp] = (porMesCompetencia[mesComp] || 0) + valor;
+  }
+  const resultado = {};
+  for (const [mes, total] of Object.entries(porMesCompetencia)) {
+    resultado[mes] = round2(-total); // convenção da DRE: despesa negativa
+  }
+  return resultado;
+}

@@ -319,6 +319,17 @@ export default function App() {
   // quebram em mais linhas. Qualquer cabecalho de tabela que queira
   // ficar congelado precisa parar logo abaixo dele — por isso a altura
   // vai para uma variavel CSS em vez de um numero chutado no estilo.
+  // Com 11 abas o topo quebra em tres linhas e come 147px de altura —
+  // um quarto da tela antes de qualquer numero aparecer. Recolhido, ele
+  // vira uma faixa fina com o nome da tela atual. A escolha fica
+  // lembrada, porque quem trabalha na DRE quer a tela inteira sempre.
+  const [topoRecolhido, setTopoRecolhido] = useState(() => {
+    try { return localStorage.getItem("fp-topo-recolhido") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("fp-topo-recolhido", topoRecolhido ? "1" : "0"); } catch { /* navegador sem storage */ }
+  }, [topoRecolhido]);
+
   const refTopo = useRef(null);
   useEffect(() => {
     const el = refTopo.current;
@@ -329,7 +340,7 @@ export default function App() {
     observador.observe(el);
     window.addEventListener("resize", publicar);
     return () => { observador.disconnect(); window.removeEventListener("resize", publicar); };
-  }, [authLoading, session]);
+  }, [authLoading, session, topoRecolhido]);
 
   // ── Portões de tela: carregando / login ──
   if (authLoading) {
@@ -346,8 +357,27 @@ export default function App() {
         display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", columnGap: 16,
         position: "sticky", top: 0, zIndex: 1000, boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
       }}>
-        <div style={{ flexShrink: 0 }}><Logo T={T} height={32} /></div>
+        <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 12 }}>
+          <Logo T={T} height={topoRecolhido ? 24 : 32} />
+          <button onClick={() => setTopoRecolhido((v) => !v)}
+            title={topoRecolhido ? "Mostrar o menu e os controles" : "Recolher o menu e liberar a tela para o conteúdo"}
+            style={{ background: "transparent", border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.textSub, fontSize: 11, fontWeight: 700, padding: "5px 10px", cursor: "pointer", whiteSpace: "nowrap", lineHeight: 1 }}>
+            {topoRecolhido ? "▾ Menu" : "▴ Recolher"}
+          </button>
+        </div>
 
+        {topoRecolhido ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, padding: "6px 0" }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: T.primary, whiteSpace: "nowrap" }}>
+              {TABS.find((t) => t.id === activeTab)?.label}
+            </span>
+            <select value={activeTab} onChange={(e) => setActiveTab(e.target.value)}
+              title="Trocar de tela sem abrir o menu"
+              style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.textSub, padding: "4px 8px", fontSize: 12, maxWidth: 220 }}>
+              {TABS.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
+            </select>
+          </div>
+        ) : (
         <div style={{ display: "flex", justifyContent: "center", minWidth: 0, padding: "8px 0" }}>
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center" }}>
             {TABS.map((tab) => (
@@ -360,9 +390,10 @@ export default function App() {
             ))}
           </div>
         </div>
+        )}
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", justifySelf: "end", padding: "8px 0" }}>
-          <div style={{ display: "flex", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", justifySelf: "end", padding: topoRecolhido ? "6px 0" : "8px 0" }}>
+          <div style={{ display: topoRecolhido ? "none" : "flex", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2, flexShrink: 0 }}>
             {["competencia", "competencia-completa", "caixa"].map((r) => (
               <button key={r} onClick={() => setRegime(r)}
                 title={r === "competencia-completa" ? "Reatribui cada título ao mês de competência real (não só ano anterior). Validado contra a planilha da gestão em 5 de 7 meses; Abr e Mai têm uma diferença pontual de ~R$ 15.968,69 ainda em apuração." : undefined}
@@ -371,10 +402,10 @@ export default function App() {
               </button>
             ))}
           </div>
-          <button onClick={() => setTema(tema === "dark" ? "light" : "dark")} title="Alternar tema claro/escuro" style={{ border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, background: T.surface, color: T.textSub }}>
+          <button onClick={() => setTema(tema === "dark" ? "light" : "dark")} title="Alternar tema claro/escuro" style={{ display: topoRecolhido ? "none" : "block", border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, background: T.surface, color: T.textSub }}>
             {tema === "dark" ? "☀ Claro" : "● Escuro"}
           </button>
-          {persistenceEnabled && (
+          {persistenceEnabled && !topoRecolhido && (
             <span style={{ fontSize: 11, color: T.textSub, display: "flex", alignItems: "center", gap: 8, flexShrink: 0, whiteSpace: "nowrap" }}>
               {perfil?.nome || session?.user?.email} <span style={{ fontSize: 9, fontWeight: 700, color: T.gold, border: `1px solid ${T.gold}55`, borderRadius: 10, padding: "1px 6px" }}>{perfil?.papel || "?"}</span>
               <button onClick={signOut} style={{ background: "transparent", border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "6px 14px", color: T.textSub, fontSize: 11, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap" }}>Sair</button>
@@ -779,6 +810,37 @@ function ImpostosTab({ T, overrides }) {
     </div>
   );
 }
+/**
+ * Barra divergente de variação: cresce do centro para a direita quando
+ * sobe e para a esquerda quando cai.
+ *
+ * ACESSIBILIDADE: nunca só cor. O sentido vem do ÍCONE (▲/▼), do SINAL
+ * do número e do lado para onde a barra cresce — a cor é reforço.
+ */
+function BarraVariacao({ T, v, escala }) {
+  if (v.estado === "sem-base") return <span style={{ color: T.textMuted, fontSize: 11 }}>—</span>;
+  if (v.estado === "novo") {
+    return <span title="Não teve faturamento no mês anterior" style={{ color: T.leaf, fontSize: 11, fontWeight: 700 }}>✦ novo no mês</span>;
+  }
+  const subiu = v.pct >= 0;
+  const largura = Math.min(50, (Math.abs(v.pct) / escala) * 50); // 50% = meia caixa
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ position: "relative", flex: 1, minWidth: 70, height: 10, background: T.border, borderRadius: 3 }}>
+        <span style={{ position: "absolute", left: "50%", top: -2, width: 1, height: 14, background: T.textMuted }} />
+        <span style={{
+          position: "absolute", top: 1, height: 8, borderRadius: 2,
+          background: subiu ? T.leaf : T.primary,
+          left: subiu ? "50%" : `${50 - largura}%`, width: `${largura}%`,
+        }} />
+      </span>
+      <span style={{ fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", color: subiu ? T.leaf : T.primary, minWidth: 62, textAlign: "right" }}>
+        {subiu ? "▲ +" : "▼ −"}{Math.abs(v.pct).toFixed(1)}%
+      </span>
+    </span>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Alturas fixas das duas faixas congeladas da tabela do Mix. Precisam
 // ser numero conhecido porque a segunda faixa (o departamento) para
@@ -822,7 +884,31 @@ function ProdutosTab({ T, historico, overrides }) {
   const ticketMedio = calcularTicketMedio(fatGerencial, dadosMes.totalQuantidade);
   const lucratividadeGerencial = overrides?.[mesSelecionado]?.[214] != null ? overrides[mesSelecionado][214] * 100 : null;
   const lucratividadeContabil = overrides?.[mesSelecionado]?.[204] != null ? overrides[mesSelecionado][204] * 100 : null;
-  const maiorFaturamento = Math.max(1, ...dadosMes.produtos.map((p) => p.faturamento || 0));
+  // Variação contra o mês anterior. A barra antiga usava o maior produto
+  // como denominador — o primeiro da lista sempre enchia a barra, o que
+  // desenhava a ordenação e não um dado. Aqui ela passa a dizer o que
+  // nenhuma outra coluna diz: quem subiu e quem caiu.
+  const idxMes = mesesDisponiveis.indexOf(mesSelecionado);
+  const mesAnterior = idxMes > 0 ? mesesDisponiveis[idxMes - 1] : null;
+  const fatAnteriorPorCodigo = {};
+  if (mesAnterior) {
+    for (const p of dados1464[mesAnterior]?.extra?.produtos || []) {
+      fatAnteriorPorCodigo[p.codigo] = (fatAnteriorPorCodigo[p.codigo] || 0) + (p.faturamento || 0);
+    }
+  }
+  function variacaoDoProduto(p) {
+    if (!mesAnterior) return { estado: "sem-base" };
+    const antes = fatAnteriorPorCodigo[p.codigo];
+    if (!antes) return { estado: "novo" };
+    return { estado: "ok", pct: ((p.faturamento - antes) / antes) * 100 };
+  }
+  // Escala comum a todas as barras do mês, para poderem ser comparadas
+  // entre si. Teto de 100% para um item que saiu do zero não achatar
+  // todos os outros.
+  const maiorVariacao = Math.min(100, Math.max(10, ...dadosMes.produtos
+    .map((p) => variacaoDoProduto(p))
+    .filter((v) => v.estado === "ok")
+    .map((v) => Math.abs(v.pct))));
   // Exibição em ordem alfabética por descrição, separada por departamento
   // comercial (Polpas / Açaí / Morango Congelado). A regra de classificação
   // mora em src/lib/departamentos.js.
@@ -870,7 +956,7 @@ function ProdutosTab({ T, historico, overrides }) {
       <div>
         <table style={{ width: "100%", minWidth: 700, borderCollapse: "separate", borderSpacing: 0, fontSize: 12 }}>
           <thead><tr>
-            {["Sabor", "Qtd.", "Faturamento", "Preço Médio", "% Participação", "Mix"].map((h) => (
+            {["Sabor", "Qtd.", "Faturamento", "Preço Médio", "% Participação", mesAnterior ? `vs. ${MESES_LABEL[mesAnterior] || mesAnterior}` : "vs. mês anterior"].map((h) => (
               <th key={h} style={{
                 textAlign: "left", padding: "0 10px", height: ALTURA_CABECALHO, color: T.textMuted, fontWeight: 700, fontSize: 10,
                 whiteSpace: "nowrap", position: "sticky", top: "var(--altura-topo, 0px)", zIndex: 3,
@@ -900,10 +986,8 @@ function ProdutosTab({ T, historico, overrides }) {
                   <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {p.faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                   <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {p.precoMedio?.toFixed(2)}</td>
                   <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{p.pctParticipacao.toFixed(2)}%</td>
-                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, minWidth: 140 }}>
-                    <div style={{ background: T.border, borderRadius: 3, height: 8, width: "100%" }}>
-                      <div style={{ background: T.primary, borderRadius: 3, height: 8, width: `${(p.faturamento / maiorFaturamento) * 100}%` }} />
-                    </div>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, minWidth: 170 }}>
+                    <BarraVariacao T={T} v={variacaoDoProduto(p)} escala={maiorVariacao} />
                   </td>
                 </tr>
               ))}
@@ -922,6 +1006,9 @@ function ProdutosTab({ T, historico, overrides }) {
         </table>
       </div>
       <p style={{ color: T.textMuted, fontSize: 11, marginTop: 12, maxWidth: 700 }}>
+        A coluna <b>vs. mês anterior</b> compara o faturamento do produto com o do mês imediatamente anterior. A barra cresce do centro para a direita quando sobe e para a esquerda quando cai, na mesma escala para todos os produtos do mês. Produto que não vendeu no mês anterior aparece como "novo no mês", não como variação infinita.
+      </p>
+      <p style={{ color: T.textMuted, fontSize: 11, marginTop: 6, maxWidth: 700 }}>
         O <b>ticket médio da categoria</b> é o faturamento dela dividido pela quantidade dela — não é a média dos preços médios dos sabores, que ignoraria o peso de cada um. Ele aparece na coluna "Preço Médio" da linha de subtotal.
       </p>
       <p style={{ color: T.textMuted, fontSize: 11, marginTop: 6, maxWidth: 700 }}>

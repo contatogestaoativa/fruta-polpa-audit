@@ -61,13 +61,23 @@ function formatar(valor, indicador) {
   return "R$ " + valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/** Eixo Y curto: R$ 1,2 mi / R$ 850 mil / 12,5 mil un. */
-function formatarEixo(valor, indicador) {
-  const abs = Math.abs(valor);
+/**
+ * Escala do eixo Y. A unidade e escolhida UMA vez, pelo maior valor do
+ * eixo, e vale para todos os tracos — senao o eixo mistura "R$ 1,5 mi"
+ * com "R$ 1.000 mil" na mesma coluna e o leitor tem que converter de
+ * cabeca para comparar dois tracos vizinhos.
+ */
+function escalaEixo(topo, indicador) {
   const prefixo = indicador === "quantidade" ? "" : "R$ ";
-  if (abs >= 1e6) return `${prefixo}${(valor / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`;
-  if (abs >= 1e3) return `${prefixo}${(valor / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mil`;
-  return `${prefixo}${valor.toLocaleString("pt-BR", { maximumFractionDigits: indicador === "precoMedio" ? 2 : 0 })}`;
+  if (topo >= 1e6) return { divisor: 1e6, sufixo: " mi", casas: 1, prefixo };
+  if (topo >= 1e4) return { divisor: 1e3, sufixo: " mil", casas: 0, prefixo };
+  return { divisor: 1, sufixo: "", casas: indicador === "precoMedio" ? 2 : 0, prefixo };
+}
+
+function formatarEixo(valor, escala) {
+  if (valor === 0) return `${escala.prefixo}0`;  // "R$ 0 mi" nao existe
+  const n = (valor / escala.divisor).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: escala.casas });
+  return `${escala.prefixo}${n}${escala.sufixo}`;
 }
 
 /**
@@ -154,6 +164,7 @@ export default function MixEvolucao({ T, dados1464 }) {
   const y = (v) => M.top + PLOT_H - (v / topo) * PLOT_H;
 
   const ticks = Array.from({ length: 5 }, (_, i) => (topo / 4) * i);
+  const escala = escalaEixo(topo, indicador);
 
   function aoMover(evento) {
     const caixa = svgRef.current?.getBoundingClientRect();
@@ -273,7 +284,7 @@ export default function MixEvolucao({ T, dados1464 }) {
           {ticks.map((t, i) => (
             <g key={i}>
               <line x1={M.left} y1={y(t)} x2={M.left + PLOT_W} y2={y(t)} stroke={T.border} strokeWidth={1} />
-              <text x={M.left - 10} y={y(t) + 4} textAnchor="end" fontSize={11} fill={T.textMuted}>{formatarEixo(t, indicador)}</text>
+              <text x={M.left - 10} y={y(t) + 4} textAnchor="end" fontSize={11} fill={T.textMuted}>{formatarEixo(t, escala)}</text>
             </g>
           ))}
           {/* eixo X */}

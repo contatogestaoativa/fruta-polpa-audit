@@ -100,8 +100,11 @@ export async function salvarLinhaDre({ loteId, mesReferencia, linhaNumero, valor
   const { error } = await supabase.from("dre_linhas").insert({
     lote_id: loteId,
     mes_referencia: mesReferencia,
-    linha_numero: linhaNumero,
-    descricao: `Linha ${linhaNumero}`,
+    linha_numero: linhaNumero ?? null,
+    // Rotinas que nao alimentam uma linha da DRE (Mix de Vendas,
+    // Faturamento por Cliente) usam a tabela so como armazenamento do
+    // JSON — sem numero de linha, a descricao vira o nome da rotina.
+    descricao: linhaNumero != null ? `Linha ${linhaNumero}` : `Rotina ${origemRotina || "?"}`,
     valor,
     regime: regime || "competencia",
     origem_rotina: origemRotina,

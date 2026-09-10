@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, Component } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, Component } from "react";
 import * as XLSX from "xlsx";
 import { THEMES } from "./theme.js";
 import { Logo } from "./components/Logo.jsx";
@@ -14,6 +14,7 @@ import { parseGrupo750Termo1Lote, parseGrupo750Termo2Lote, ehLoteMultiMes } from
 import { parseProdutos1464, calcularTicketMedio } from "./lib/parsers/produtos1464.js";
 import { parseClientes1464, ehArquivoClientes1464 } from "./lib/parsers/clientes1464.js";
 import ClientesTab from "./components/ClientesTab.jsx";
+import MixEvolucao from "./components/MixEvolucao.jsx";
 import { agruparPorDepartamento } from "./lib/departamentos.js";
 import { detectarAnomalia } from "./lib/parsers/anomalyDetection.js";
 import {
@@ -118,6 +119,11 @@ export default function App() {
     return () => { ativo = false; unsubscribe(); };
   }, []);
 
+  // Falha de gravacao no Supabase costumava passar em branco: a tela
+  // mostrava o mes importado (estado local) e o banco nao recebia nada.
+  // Ao recarregar, sumia. Agora a falha vira aviso na tela.
+  const [falhaPersistencia, setFalhaPersistencia] = useState(null);
+
   const gravar = useCallback((rotina, mes, arquivo, valor, extra) => {
     if (!mes) return;
     setHistorico((prev) => {
@@ -128,7 +134,13 @@ export default function App() {
       importarLoteEGravarLinha({
         rotina, mesReferencia: `${mes}-01`, nomeArquivo: arquivo,
         linhaNumero: LINHA_POR_ROTINA[rotina], valor, regime, extra,
-      });
+      })
+        .then((r) => {
+          if (!r?.ok || r.linhaGravada === false) {
+            setFalhaPersistencia({ rotina, mes, motivo: r?.motivo || "o banco recusou a gravacao (verifique o papel do usuario)" });
+          }
+        })
+        .catch((err) => setFalhaPersistencia({ rotina, mes, motivo: err?.message || String(err) }));
     }
   }, [regime]);
 
@@ -216,7 +228,20 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   }, [gravar]);
 
-  const [dadosClientes, setDadosClientes] = useState({});
+  // Faturamento por Cliente vive no MESMO historico das outras rotinas
+  // (e nao num useState solto), porque e o historico que vai e volta do
+  // Supabase. Era esse o motivo de o import sumir ao recarregar a pagina
+  // e de nao aparecer para o resto do time.
+  const dadosClientes = useMemo(() => {
+    const registros = historico["1464-clientes"] || {};
+    const saida = {};
+    for (const mes of Object.keys(registros)) {
+      const extra = registros[mes]?.extra;
+      if (extra && Array.isArray(extra.clientes)) saida[mes] = extra;
+    }
+    return saida;
+  }, [historico]);
+
   const handleFileClientes = useCallback((e) => {
     const file = e.target.files[0]; if (!file) return;
     setLoading("clientes");
@@ -228,13 +253,16 @@ export default function App() {
           alert("Não reconheci nenhuma aba com nome de mês (janeiro, fevereiro...) neste arquivo.");
         } else {
           const resultado = parseClientes1464(wb, XLSX.utils, 2026);
-          setDadosClientes((prev) => ({ ...prev, ...resultado }));
+          for (const mes of Object.keys(resultado)) {
+            gravar("1464-clientes", mes, file.name, resultado[mes].totalFaturamento, resultado[mes]);
+          }
+          if (Object.keys(resultado).length === 0) alert("Não encontrei nenhum mês reconhecível nas abas deste arquivo.");
         }
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("clientes"); e.target.value = "";
     };
     reader.readAsArrayBuffer(file);
-  }, []);
+  }, [gravar]);
 
   const [dadosTrimestral, setDadosTrimestral] = useState({});
   const handleFileTrimestral = useCallback((e) => {
@@ -287,6 +315,22 @@ export default function App() {
   const hasData = Object.values(historico).some((h) => Object.keys(h).length > 0);
   const podeGerenciarImportacao = podeImportar(perfil);
 
+  // O topo do site e sticky e a altura dele MUDA conforme as abas
+  // quebram em mais linhas. Qualquer cabecalho de tabela que queira
+  // ficar congelado precisa parar logo abaixo dele — por isso a altura
+  // vai para uma variavel CSS em vez de um numero chutado no estilo.
+  const refTopo = useRef(null);
+  useEffect(() => {
+    const el = refTopo.current;
+    if (!el) return;
+    const publicar = () => document.documentElement.style.setProperty("--altura-topo", `${el.offsetHeight}px`);
+    publicar();
+    const observador = new ResizeObserver(publicar);
+    observador.observe(el);
+    window.addEventListener("resize", publicar);
+    return () => { observador.disconnect(); window.removeEventListener("resize", publicar); };
+  }, [authLoading, session]);
+
   // ── Portões de tela: carregando / login ──
   if (authLoading) {
     return <TelaCarregando T={T} />;
@@ -297,7 +341,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: T.fontBody, transition: "background .15s, color .15s" }}>
-      <div style={{
+      <div ref={refTopo} style={{
         background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 20px", minHeight: 60,
         display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", columnGap: 16,
         position: "sticky", top: 0, zIndex: 1000, boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
@@ -343,6 +387,16 @@ export default function App() {
       </div>
 
       <div style={{ padding: "24px 28px", maxWidth: 1280, margin: "0 auto" }}>
+      {falhaPersistencia && (
+        <div role="alert" style={{ border: `1px solid ${T.warning}`, background: T.warning + "1E", borderRadius: 8, padding: "12px 14px", marginBottom: 18, fontSize: 12, color: T.text, display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <b style={{ whiteSpace: "nowrap" }}>⚠ NÃO SALVO</b>
+          <span style={{ flex: 1 }}>
+            O import de <b>{falhaPersistencia.rotina}</b> ({falhaPersistencia.mes}) apareceu na tela mas <b>não foi gravado no banco</b> — ao recarregar, ele some, e o resto do time não vê.
+            Motivo: {falhaPersistencia.motivo}
+          </span>
+          <button onClick={() => setFalhaPersistencia(null)} style={{ background: "transparent", border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "4px 10px", color: T.textSub, fontSize: 11, cursor: "pointer" }}>Fechar</button>
+        </div>
+      )}
       <ErrorBoundary key={activeTab}>
         {activeTab === "import" && (
           podeGerenciarImportacao ? (
@@ -726,6 +780,12 @@ function ImpostosTab({ T, overrides }) {
   );
 }
 // ═══════════════════════════════════════════════════════════════════
+// Alturas fixas das duas faixas congeladas da tabela do Mix. Precisam
+// ser numero conhecido porque a segunda faixa (o departamento) para
+// logo abaixo da primeira.
+const ALTURA_CABECALHO = 30;
+const ALTURA_DEPARTAMENTO = 30;
+
 function ProdutosTab({ T, historico, overrides }) {
   const dados1464 = historico["1464-produtos"] || {};
   const mesesDisponiveis = Object.keys(dados1464).sort();
@@ -788,35 +848,48 @@ function ProdutosTab({ T, historico, overrides }) {
         <StatCard T={T} label="Qtd. Total Vendida" value={dadosMes.totalQuantidade.toLocaleString("pt-BR")} sub="unidades no mês" accent={T.leaf} />
       </div>
 
-      {/* Resumo por departamento comercial */}
+      {/* Resumo por departamento comercial — cada um com o ticket médio próprio */}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
         {departamentos.map((dep) => (
           <StatCard
             key={dep.id}
             T={T}
-            label={dep.label}
-            value={`R$ ${dep.totalFaturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            sub={`${dep.pctParticipacao.toFixed(2)}% do faturamento · ${dep.produtos.length} ${dep.produtos.length === 1 ? "item" : "itens"} · ${dep.totalQuantidade.toLocaleString("pt-BR")} un.`}
+            label={`${dep.label} · ticket médio`}
+            value={dep.ticketMedio != null ? `R$ ${dep.ticketMedio.toFixed(2)}` : "—"}
+            sub={`R$ ${dep.totalFaturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ÷ ${dep.totalQuantidade.toLocaleString("pt-BR")} un. · ${dep.pctParticipacao.toFixed(2)}% do faturamento · ${dep.produtos.length} ${dep.produtos.length === 1 ? "item" : "itens"}`}
             accent={T.text}
           />
         ))}
       </div>
 
-      {/* Tabela de produtos, por departamento, em ordem alfabética */}
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+      {/* Tabela de produtos, por departamento, em ordem alfabética.
+          O cabeçalho fica congelado: a rolagem acontece dentro da caixa,
+          não na página, e os <th> ficam grudados no topo dela. Por isso
+          borderCollapse é "separate" — com "collapse" a borda do cabeçalho
+          fixo some ao rolar. */}
+      <div>
+        <table style={{ width: "100%", minWidth: 700, borderCollapse: "separate", borderSpacing: 0, fontSize: 12 }}>
           <thead><tr>
             {["Sabor", "Qtd.", "Faturamento", "Preço Médio", "% Participação", "Mix"].map((h) => (
-              <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: T.textMuted, fontWeight: 700, fontSize: 10, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
+              <th key={h} style={{
+                textAlign: "left", padding: "0 10px", height: ALTURA_CABECALHO, color: T.textMuted, fontWeight: 700, fontSize: 10,
+                whiteSpace: "nowrap", position: "sticky", top: "var(--altura-topo, 0px)", zIndex: 3,
+                background: T.bg, boxShadow: `inset 0 -1px 0 ${T.borderHi}`,
+              }}>{h}</th>
             ))}
           </tr></thead>
           {departamentos.map((dep) => (
             <tbody key={dep.id}>
               <tr>
-                <th colSpan={6} style={{ textAlign: "left", padding: "14px 10px 7px", background: T.surface, borderTop: `2px solid ${T.borderHi}`, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: T.text }}>
+                <th colSpan={6} style={{
+                  textAlign: "left", padding: "0 10px", height: ALTURA_DEPARTAMENTO, background: T.surface,
+                  boxShadow: `inset 0 2px 0 ${T.borderHi}, inset 0 -1px 0 ${T.border}`,
+                  fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: T.text,
+                  position: "sticky", top: `calc(var(--altura-topo, 0px) + ${ALTURA_CABECALHO}px)`, zIndex: 2,
+                }}>
                   ▸ {dep.label}
                   <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: T.textSub, marginLeft: 8 }}>
-                    {dep.produtos.length} {dep.produtos.length === 1 ? "item" : "itens"} · A → Z
+                    {dep.produtos.length} {dep.produtos.length === 1 ? "item" : "itens"} · A → Z · ticket médio {dep.ticketMedio != null ? `R$ ${dep.ticketMedio.toFixed(2)}` : "—"}
                   </span>
                 </th>
               </tr>
@@ -838,7 +911,9 @@ function ProdutosTab({ T, historico, overrides }) {
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700 }}>Subtotal {dep.label}</td>
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>{dep.totalQuantidade.toLocaleString("pt-BR")}</td>
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>R$ {dep.totalFaturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}` }}></td>
+                <td title="Ticket médio da categoria: faturamento ÷ quantidade" style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {dep.ticketMedio != null ? `R$ ${dep.ticketMedio.toFixed(2)}` : "—"}
+                </td>
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>{dep.pctParticipacao.toFixed(2)}%</td>
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}` }}></td>
               </tr>
@@ -846,9 +921,14 @@ function ProdutosTab({ T, historico, overrides }) {
           ))}
         </table>
       </div>
-      <p style={{ color: T.textMuted, fontSize: 11, marginTop: 12, maxWidth: 680 }}>
-        A Rotina 1464 não traz o departamento: ele é deduzido da descrição do produto (regra em <code>src/lib/departamentos.js</code>). "Morango Congelado" só captura a descrição que diz <b>congelado</b> — o sabor "MORANGO" sozinho continua em Polpas. Produto classificado errado se corrige pelo código em <code>DEPARTAMENTO_POR_CODIGO</code>.
+      <p style={{ color: T.textMuted, fontSize: 11, marginTop: 12, maxWidth: 700 }}>
+        O <b>ticket médio da categoria</b> é o faturamento dela dividido pela quantidade dela — não é a média dos preços médios dos sabores, que ignoraria o peso de cada um. Ele aparece na coluna "Preço Médio" da linha de subtotal.
       </p>
+      <p style={{ color: T.textMuted, fontSize: 11, marginTop: 6, maxWidth: 700 }}>
+        A Rotina 1464 não traz o departamento: ele é deduzido da descrição do produto (regra em <code>src/lib/departamentos.js</code>). Cuidado com a pegadinha: a marca "FRUTA POLPA" está dentro da descrição de todo produto, então a palavra "polpa" não separa nada — o que identifica o Morango Congelado é a palavra <b>congelado</b>. Produto classificado errado se corrige pelo código em <code>DEPARTAMENTO_POR_CODIGO</code>.
+      </p>
+
+      <MixEvolucao T={T} dados1464={dados1464} />
     </div>
   );
 }

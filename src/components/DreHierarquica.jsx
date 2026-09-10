@@ -37,8 +37,13 @@ function agruparSecoes(nodes) {
   return secoes;
 }
 
-export default function DreHierarquica({ T, meses, mesesLabel, overrides, importedFlags }) {
-  const secoes = useMemo(() => agruparSecoes(DRE_NODES), []);
+export default function DreHierarquica({ T, meses, mesesLabel, overrides, importedFlags, blocoVisivel = "ambos" }) {
+  const secoesTodas = useMemo(() => agruparSecoes(DRE_NODES), []);
+  const secoes = useMemo(() => {
+    if (blocoVisivel === "contabil") return secoesTodas.filter((s) => s.header.row < 201);
+    if (blocoVisivel === "gerencial") return secoesTodas.filter((s) => s.header.row >= 201);
+    return secoesTodas;
+  }, [secoesTodas, blocoVisivel]);
   const porRow = useMemo(() => Object.fromEntries(DRE_NODES.map((n) => [n.row, n])), []);
   const [expandidas, setExpandidas] = useState(() => new Set());
   const [notaAberta, setNotaAberta] = useState(null);
@@ -154,7 +159,7 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
             )}
           </thead>
           <tbody>
-            <TituloSecao T={T} texto="DRE CONTÁBIL" colSpan={meses.length * (mostrarPct ? 2 : 1) + 1 + (mostrarPct ? 2 : 1)} />
+            {blocoVisivel !== "gerencial" && <TituloSecao T={T} texto="DRE CONTÁBIL" colSpan={meses.length * (mostrarPct ? 2 : 1) + 1 + (mostrarPct ? 2 : 1)} />}
             {secoes.map((sec, idx) => (
               <FragmentComTitulo key={sec.header.row}
                 T={T} sec={sec} meses={meses} mostrarPct={mostrarPct}

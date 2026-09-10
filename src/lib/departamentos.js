@@ -24,16 +24,54 @@ export const DEPARTAMENTOS = [
 export const LABEL_DEPARTAMENTO = Object.fromEntries(DEPARTAMENTOS.map((d) => [d.id, d.label]));
 
 /**
- * Excecoes por codigo de produto (Winthor). Tem precedencia sobre a
- * regra de descricao — e aqui que se corrige um produto classificado
- * errado, sem tocar na logica.
- * Ex: { 729: "acai", 694: "polpas" }
+ * Departamento por codigo de produto (Winthor) — a fonte de verdade.
+ * Levantado em 10/09/2026 a partir dos 7 meses ja importados (jan-jul
+ * 2026): 25 produtos distintos, tres linhas comerciais claras.
+ *
+ * Codigo manda sobre descricao. Produto novo que ainda nao esteja aqui
+ * cai na regra de descricao abaixo, que erra pouco mas nao e garantia
+ * — quando entrar produto novo, cadastre o codigo aqui.
+ *
+ * A linha de polpa 400g PREM inclui a POLPA DE ACAI (codigo 729):
+ * confirmado pelo cliente que ela e polpa, nao a categoria Acai. A
+ * categoria Acai e a linha pronta de 650g.
  */
-export const DEPARTAMENTO_POR_CODIGO = {};
+export const DEPARTAMENTO_POR_CODIGO = {
+  // ── Polpa de Frutas — linha 400g PREM ──
+  684: "polpas",  // POLPA DE ABACAXI 400G
+  729: "polpas",  // POLPA DE ACAI 400G  (polpa, nao categoria Acai)
+  685: "polpas",  // POLPA DE ACEROLA 400G
+  686: "polpas",  // POLPA DE BACURI 400G
+  687: "polpas",  // POLPA DE CAJA 400G
+  688: "polpas",  // POLPA DE CAJU 400G
+  689: "polpas",  // POLPA DE CUPUACU 400G
+  690: "polpas",  // POLPA DE GOIABA 400G
+  691: "polpas",  // POLPA DE GRAVIOLA 400G
+  692: "polpas",  // POLPA DE MANGA 400G
+  693: "polpas",  // POLPA DE MARACUJA 400G
+  694: "polpas",  // POLPA DE MORANGO 400G
+  730: "polpas",  // POLPA DE MURICI 400G
+  731: "polpas",  // POLPA DE TAMARINDO 400G
+  735: "polpas",  // POLPA MIX ABX/HORT 400G
+  736: "polpas",  // POLPA MIX HIBISCO 400G
+  738: "polpas",  // POLPA MIX TROPICAL 400G
+  733: "polpas",  // POLPA MIX VERDE 400G
+  734: "polpas",  // POLPA MIX YELLOW 400G
+
+  // ── Acai — linha pronta 650g ──
+  14591: "acai",  // ACAI COM BANANA 650G
+  14592: "acai",  // ACAI COM MORANGO 650G
+  14599: "acai",  // ACAI TRADICIONAL 650G
+  15560: "acai",  // ACAI TRADICIONAL ZERO 650G
+
+  // ── Morango Congelado ──
+  15567: "morango", // MORANGO CONGELADO 1,002KG
+  15566: "morango", // MORANGO CONGELADO 500G
+};
 
 /**
  * Itens de Morango Congelado confirmados pelo cliente (10/09/2026).
- * Comparados ja normalizados (sem acento, em caixa alta).
+ * Rede de seguranca caso o codigo mude: comparados ja normalizados.
  */
 export const ITENS_MORANGO_CONGELADO = [
   "MORANGO CONGELADO 1,002KG FRUTA POLPA",
@@ -54,12 +92,14 @@ const MORANGO_EXATOS = new Set(ITENS_MORANGO_CONGELADO.map(normalizar));
 
 /**
  * Regra de classificacao (a ordem importa):
- *   1. excecao cadastrada por codigo;
+ *   1. codigo cadastrado em DEPARTAMENTO_POR_CODIGO — manda sobre tudo;
  *   2. item da lista confirmada de morango congelado;
- *   3. MORANGO + CONGELAD em qualquer lugar da descricao -> Morango
- *      Congelado (pega embalagem nova sem precisar cadastrar);
- *   4. ACAI (com ou sem acento) -> Acai;
- *   5. todo o resto -> Polpa de Frutas.
+ *   3. MORANGO + CONGELAD na descricao -> Morango Congelado (pega
+ *      embalagem nova sem precisar cadastrar o codigo);
+ *   4. descricao que comeca com POLPA -> Polpa de Frutas, inclusive a
+ *      polpa de acai;
+ *   5. ACAI (com ou sem acento) -> Acai (a linha pronta de 650g);
+ *   6. todo o resto -> Polpa de Frutas.
  */
 export function classificarDepartamento(produto) {
   const porCodigo = DEPARTAMENTO_POR_CODIGO[produto?.codigo];
@@ -68,6 +108,11 @@ export function classificarDepartamento(produto) {
   const d = normalizar(produto?.descricao);
   if (MORANGO_EXATOS.has(d)) return "morango";
   if (d.includes("MORANGO") && d.includes("CONGELAD")) return "morango";
+  // Um produto que se chama "POLPA DE ..." e polpa, inclusive a de
+  // acai — a categoria Acai e a linha pronta de 650g, que comeca a
+  // descricao com ACAI. Esta ordem e o que impede "POLPA DE ACAI 400G"
+  // de ser contado como Acai.
+  if (d.startsWith("POLPA")) return "polpas";
   if (d.includes("ACAI")) return "acai";
   return "polpas";
 }

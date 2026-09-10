@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { StatCard } from "./AnomalyBadge.jsx";
 import { MESES_LABEL } from "../lib/dreReference.js";
+import ClientesEvolucao from "./ClientesEvolucao.jsx";
 
 const OPCOES_TOPN = [5, 10, 15, 20, "Todos"];
 
@@ -29,7 +30,15 @@ export default function ClientesTab({ T, dadosClientes }) {
   }
 
   const dadosMes = dadosClientes[mesSelecionado];
-  const listaCompleta = dadosMes.clientes;
+  // O acumulado e calculado sobre o ranking INTEIRO, nao sobre a fatia
+  // exibida: "os 10 maiores fazem 68% do faturamento" e uma frase sobre
+  // a carteira toda. Se fosse calculado dentro do Top N, o ultimo da
+  // lista sempre daria 100% e a leitura viraria mentira.
+  const listaCompleta = dadosMes.clientes.reduce((acc, c) => {
+    const anterior = acc.length ? acc[acc.length - 1].pctAcumulado : 0;
+    acc.push({ ...c, posicao: acc.length + 1, pctAcumulado: anterior + (c.pctParticipacao || 0) });
+    return acc;
+  }, []);
   const lista = topN === "Todos" ? listaCompleta : listaCompleta.slice(0, topN);
   const somaTopN = lista.reduce((s, c) => s + c.faturamento, 0);
   const pctTopN = dadosMes.totalFaturamento ? (somaTopN / dadosMes.totalFaturamento) * 100 : 0;
@@ -63,18 +72,20 @@ export default function ClientesTab({ T, dadosClientes }) {
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead><tr>
-            {["Cliente", "Qtd.", "Faturamento", "Preço Médio", "% Participação", "Mix"].map((h) => (
+            {["#", "Cliente", "Qtd.", "Faturamento", "Preço Médio", "% Participação", "% Acumulado", "Mix"].map((h) => (
               <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: T.textMuted, fontWeight: 700, fontSize: 10, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
             {lista.map((c) => (
               <tr key={c.codigo}>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, color: T.textMuted, fontSize: 11, whiteSpace: "nowrap" }}>{c.posicao}</td>
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}` }}>{c.nome}</td>
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{c.quantidade.toLocaleString("pt-BR")}</td>
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {c.faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{c.precoMedio != null ? `R$ ${c.precoMedio.toFixed(2)}` : "—"}</td>
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{c.pctParticipacao.toFixed(2)}%</td>
+                <td title="Soma da participação deste cliente e de todos acima dele no ranking do mês" style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", fontWeight: 700, color: T.gold }}>{c.pctAcumulado.toFixed(2)}%</td>
                 <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, minWidth: 140 }}>
                   <div style={{ background: T.border, borderRadius: 3, height: 8, width: "100%" }}>
                     <div style={{ background: T.primary, borderRadius: 3, height: 8, width: `${(c.faturamento / maiorFaturamento) * 100}%` }} />
@@ -85,6 +96,8 @@ export default function ClientesTab({ T, dadosClientes }) {
           </tbody>
         </table>
       </div>
+
+      <ClientesEvolucao T={T} dadosClientes={dadosClientes} />
     </div>
   );
 }

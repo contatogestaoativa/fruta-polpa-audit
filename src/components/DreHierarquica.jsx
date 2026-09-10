@@ -105,6 +105,26 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
     if (!porFechamento) return soma;
     return totalFechamentos ? soma / totalFechamentos : null;
   }
+  /**
+   * Media do periodo. Para linha em R$ e a media do que esta EXIBIDO nas
+   * colunas de mes — entao respeita o botao "por fechamento" e continua
+   * coerente com o que se le ao lado.
+   *
+   * Para linha de % (204/214/219) media aritmetica seria erro: daria o
+   * mesmo peso a um mes de R$ 7 mi e a um de R$ 9,7 mi. A media de uma
+   * linha de % e sempre o acumulado em R$ dividido pelo acumulado da
+   * base — que e exatamente o que a coluna Total ja calcula.
+   */
+  function mediaDaLinha(node) {
+    if (!meses.length) return null;
+    if (PCT_ROWS.has(node.row)) return totalDaLinha(node);
+    const soma = meses.reduce((s, m) => {
+      const { valor } = valorDaLinha(node, m);
+      return s + (typeof valor === "number" ? valor : 0);
+    }, 0);
+    return soma / meses.length;
+  }
+
   function totalPctSobre(node) {
     if (PCT_ROWS.has(node.row)) return null;
     if (!totalReceitaBruta) return null;
@@ -143,6 +163,16 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
                 Total ({meses.length}m)
                 <span style={{ display: "block", fontSize: 9, fontWeight: 400, color: T.primary, opacity: 0.8 }}>{totalFechamentos} fech.</span>
               </th>
+              <th rowSpan={mostrarPct ? 2 : 1}
+                title={porFechamento
+                  ? "Media por fechamento: media dos valores exibidos nas colunas de mes. Linhas de % usam o acumulado, nunca a media aritmetica."
+                  : "Media mensal do periodo. Linhas de % usam o acumulado (lucro acumulado / base acumulada), nunca a media aritmetica."}
+                style={{ ...thStyle(T), textAlign: "right", whiteSpace: "nowrap", position: "sticky", top: HEADER_TOP, background: T.goldDim, zIndex: 2, color: T.gold, borderLeft: `2px solid ${T.gold}` }}>
+                Média
+                <span style={{ display: "block", fontSize: 9, fontWeight: 400, color: T.gold, opacity: 0.8 }}>
+                  {porFechamento ? "por fechamento" : `de ${meses.length} ${meses.length === 1 ? "mês" : "meses"}`}
+                </span>
+              </th>
             </tr>
             {mostrarPct && (
               <tr>
@@ -159,7 +189,7 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
             )}
           </thead>
           <tbody>
-            {blocoVisivel !== "gerencial" && <TituloSecao T={T} texto="DRE CONTÁBIL" colSpan={meses.length * (mostrarPct ? 2 : 1) + 1 + (mostrarPct ? 2 : 1)} />}
+            {blocoVisivel !== "gerencial" && <TituloSecao T={T} texto="DRE CONTÁBIL" colSpan={meses.length * (mostrarPct ? 2 : 1) + 1 + (mostrarPct ? 2 : 1) + 1} />}
             {secoes.map((sec, idx) => (
               <FragmentComTitulo key={sec.header.row}
                 T={T} sec={sec} meses={meses} mostrarPct={mostrarPct}
@@ -168,7 +198,7 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
                 temNota={Object.keys(sec.header.comments || {}).length > 0}
                 notaAberta={notaAberta} setNotaAberta={setNotaAberta}
                 toggle={toggle} valorDaLinha={valorDaLinha} pctSobre={pctSobre}
-                totalDaLinha={totalDaLinha} totalPctSobre={totalPctSobre}
+                totalDaLinha={totalDaLinha} totalPctSobre={totalPctSobre} mediaDaLinha={mediaDaLinha}
                 inserirTituloGerencialAntes={sec.header.row === 201}
               />
             ))}
@@ -189,8 +219,10 @@ function TituloSecao({ T, texto, colSpan }) {
   );
 }
 
-function FragmentComTitulo({ T, sec, meses, mostrarPct, isPct, isExpanded, temFilhos, temNota, notaAberta, setNotaAberta, toggle, valorDaLinha, pctSobre, totalDaLinha, totalPctSobre, inserirTituloGerencialAntes }) {
-  const colSpanTotal = meses.length * (mostrarPct ? 2 : 1) + 1 + (mostrarPct ? 2 : 1);
+function FragmentComTitulo({ T, sec, meses, mostrarPct, isPct, isExpanded, temFilhos, temNota, notaAberta, setNotaAberta, toggle, valorDaLinha, pctSobre, totalDaLinha, totalPctSobre, mediaDaLinha, inserirTituloGerencialAntes }) {
+  // +1 pela coluna Média, que e sempre uma so (o "% Sobre" da media seria
+  // identico ao do total — repetir so poluiria).
+  const colSpanTotal = meses.length * (mostrarPct ? 2 : 1) + 1 + (mostrarPct ? 2 : 1) + 1;
   const rows = [];
   if (inserirTituloGerencialAntes) {
     rows.push(<TituloSecao key="titulo-gerencial" T={T} texto="DRE GERENCIAL" colSpan={colSpanTotal} />);
@@ -242,6 +274,9 @@ function FragmentComTitulo({ T, sec, meses, mostrarPct, isPct, isExpanded, temFi
                 {totalPct === null ? "—" : fmtPctSimples(totalPct)}
               </td>
             )}
+            <td style={{ ...tdStyle(T), textAlign: "right", fontWeight: 700, color: T.gold, whiteSpace: "nowrap", background: T.goldDim, borderLeft: `2px solid ${T.gold}` }}>
+              {isPct ? fmtPct(mediaDaLinha(sec.header) / 100) : fmtMoeda(mediaDaLinha(sec.header))}
+            </td>
           </Fragment>
         );
       })()}
@@ -290,6 +325,7 @@ function FragmentComTitulo({ T, sec, meses, mostrarPct, isPct, isExpanded, temFi
               <Fragment key="total">
                 <td style={{ ...tdStyle(T), textAlign: "right", fontWeight: 700, color: T.primary, whiteSpace: "nowrap", background: T.primaryDim, borderLeft: `2px solid ${T.primary}` }}>{fmtMoeda(totalValor)}</td>
                 {mostrarPct && <td style={{ ...tdStyle(T), textAlign: "right", color: T.primary, fontSize: 11, whiteSpace: "nowrap", background: T.primaryDim }}>{totalPct === null ? "—" : fmtPctSimples(totalPct)}</td>}
+                <td style={{ ...tdStyle(T), textAlign: "right", fontWeight: 700, color: T.gold, whiteSpace: "nowrap", background: T.goldDim, borderLeft: `2px solid ${T.gold}` }}>{fmtMoeda(mediaDaLinha(child))}</td>
               </Fragment>
             );
           })()}

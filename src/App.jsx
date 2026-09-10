@@ -8,10 +8,12 @@ import AnaliseTrimestral from "./components/AnaliseTrimestral.jsx";
 import ComparativoPeriodos from "./components/ComparativoPeriodos.jsx";
 import ResumoDoMes from "./components/ResumoDoMes.jsx";
 import { parseAnaliseTrimestral, ehArquivoAnaliseTrimestral } from "./lib/parsers/analiseTrimestral.js";
-import { parseDescontosConcedidos, detectarNotasDuplicadas } from "./lib/parsers/descontosConcedidos.js";
+import { parseDescontosConcedidos, detectarNotasDuplicadas, parseDescontosConcedidosCompetenciaPura } from "./lib/parsers/descontosConcedidos.js";
 import { parseGrupo222, detectarMesPredominante } from "./lib/parsers/grupo222.js";
 import { parseGrupo750Termo1Lote, parseGrupo750Termo2Lote, ehLoteMultiMes } from "./lib/parsers/grupo750.js";
 import { parseProdutos1464, calcularTicketMedio } from "./lib/parsers/produtos1464.js";
+import { parseClientes1464, ehArquivoClientes1464 } from "./lib/parsers/clientes1464.js";
+import ClientesTab from "./components/ClientesTab.jsx";
 import { detectarAnomalia } from "./lib/parsers/anomalyDetection.js";
 import {
   persistenceEnabled, signIn, signOut, getSessaoEPerfil, onAuthChange,
@@ -30,6 +32,7 @@ const TABS = [
   { id: "anomalias", label: "Anomalias" },
   { id: "impostos", label: "Receita x Lucro x Impostos" },
   { id: "produtos", label: "Mix de Vendas" },
+  { id: "clientes", label: "Faturamento por Cliente" },
   { id: "trimestral", label: "Análise Trimestral" },
   { id: "rastreabilidade", label: "Rastreabilidade" },
 ];
@@ -62,6 +65,14 @@ class ErrorBoundary extends Component {
   }
 }
 
+// Linha 138 conforme o regime selecionado (3 opções — ver toggle no cabeçalho)
+function valorLinha138(h138, regime) {
+  if (!h138) return undefined;
+  if (regime === "caixa") return h138.extra?.saldoCaixa;
+  if (regime === "competencia-completa") return h138.extra?.saldoCompetenciaCompleta ?? h138.extra?.saldoCompetencia;
+  return h138.extra?.saldoCompetencia;
+}
+
 export default function App() {
   const [tema, setTema] = useState("dark");
   const T = THEMES[tema];
@@ -70,6 +81,7 @@ export default function App() {
   const [loading, setLoading] = useState(null);
   const [limiarPct, setLimiarPct] = useState(20);
   const [regime, setRegime] = useState("competencia");
+  const [blocoVisivel, setBlocoVisivel] = useState("ambos"); // "ambos" | "contabil" | "gerencial"
 
   // ── Autenticação ──
   const [authLoading, setAuthLoading] = useState(persistenceEnabled);
@@ -130,7 +142,11 @@ export default function App() {
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
         const serieMensal = parseDescontosConcedidos(rows);
         const duplicadas = detectarNotasDuplicadas(rows);
-        serieMensal.forEach((l) => gravar("2107", l.mes, file.name, l.saldoCompetencia, { saldoCompetencia: l.saldoCompetencia, saldoCaixa: l.saldoCaixa, duplicadas: duplicadas.length }));
+        const competenciaCompleta = parseDescontosConcedidosCompetenciaPura(rows);
+        serieMensal.forEach((l) => gravar("2107", l.mes, file.name, l.saldoCompetencia, {
+          saldoCompetencia: l.saldoCompetencia, saldoCaixa: l.saldoCaixa, duplicadas: duplicadas.length,
+          saldoCompetenciaCompleta: competenciaCompleta[l.mes] ?? null,
+        }));
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("dre"); e.target.value = "";
     };
@@ -199,6 +215,26 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   }, [gravar]);
 
+  const [dadosClientes, setDadosClientes] = useState({});
+  const handleFileClientes = useCallback((e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setLoading("clientes");
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
+        if (!ehArquivoClientes1464(wb)) {
+          alert("Não reconheci nenhuma aba com nome de mês (janeiro, fevereiro...) neste arquivo.");
+        } else {
+          const resultado = parseClientes1464(wb, XLSX.utils, 2026);
+          setDadosClientes((prev) => ({ ...prev, ...resultado }));
+        }
+      } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
+      setLoading(null); setActiveTab("clientes"); e.target.value = "";
+    };
+    reader.readAsArrayBuffer(file);
+  }, []);
+
   const [dadosTrimestral, setDadosTrimestral] = useState({});
   const handleFileTrimestral = useCallback((e) => {
     const file = e.target.files[0]; if (!file) return;
@@ -228,7 +264,7 @@ export default function App() {
       const h211a = historico["124-750"]?.[mes];
       const h211b = historico["750-caixa10"]?.[mes];
 
-      const linha138 = h138 ? (regime === "competencia" ? h138.extra?.saldoCompetencia : h138.extra?.saldoCaixa) : undefined;
+      const linha138 = valorLinha138(h138, regime);
       const linha209 = h209 ? h209.valor : undefined;
       const linha211 = (h211a || h211b) ? Math.round(((h211a?.valor || 0) + (h211b?.valor || 0)) * 100) / 100 : undefined;
 
@@ -282,9 +318,11 @@ export default function App() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", justifySelf: "end", padding: "8px 0" }}>
           <div style={{ display: "flex", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2, flexShrink: 0 }}>
-            {["competencia", "caixa"].map((r) => (
-              <button key={r} onClick={() => setRegime(r)} style={{ border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", background: regime === r ? T.primary : "transparent", color: regime === r ? "#fff" : T.textSub }}>
-                {r === "competencia" ? "Competência" : "Caixa"}
+            {["competencia", "competencia-completa", "caixa"].map((r) => (
+              <button key={r} onClick={() => setRegime(r)}
+                title={r === "competencia-completa" ? "Reatribui cada título ao mês de competência real (não só ano anterior). Validado contra a planilha da gestão em 5 de 7 meses; Abr e Mai têm uma diferença pontual de ~R$ 15.968,69 ainda em apuração." : undefined}
+                style={{ border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", background: regime === r ? T.primary : "transparent", color: regime === r ? "#fff" : T.textSub }}>
+                {r === "competencia" ? "Competência" : r === "competencia-completa" ? "Competência Completa" : "Caixa"}
               </button>
             ))}
           </div>
@@ -312,7 +350,8 @@ export default function App() {
               handleFileTermo1={handleFileLote("124-750", parseGrupo750Termo1Lote)}
               handleFileTermo2={handleFileLote("750-caixa10", parseGrupo750Termo2Lote)}
               handleFileProdutos1464={handleFileProdutos1464}
-              handleFileTrimestral={handleFileTrimestral} mesesTrimestral={Object.keys(dadosTrimestral).filter((k) => k !== "__arquivo")} />
+              handleFileTrimestral={handleFileTrimestral} mesesTrimestral={Object.keys(dadosTrimestral).filter((k) => k !== "__arquivo")}
+              handleFileClientes={handleFileClientes} mesesClientes={Object.keys(dadosClientes)} />
           ) : (
             <div style={{ textAlign: "center", padding: "60px 0", color: T.textMuted }}>
               <div style={{ fontSize: 32, marginBottom: 10 }}>🔒</div>
@@ -322,11 +361,22 @@ export default function App() {
         )}
         {activeTab === "dre" && (
           <div>
-            <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 4 }}>DRE — Jan a Jul/2026</h1>
-            <p style={{ color: T.textSub, fontSize: 12, marginBottom: 4 }}>Regime: <b style={{ color: T.text }}>{regime === "competencia" ? "Competência" : "Caixa"}</b> — afeta a linha 138. Demais linhas ainda não têm regra de caixa definida.</p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
+              <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700 }}>DRE — Jan a Jul/2026</h1>
+              <div style={{ display: "flex", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2 }}>
+                {[["ambos", "Ambos"], ["contabil", "Só Contábil"], ["gerencial", "Só Gerencial"]].map(([v, label]) => (
+                  <button key={v} onClick={() => setBlocoVisivel(v)} style={{ border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", background: blocoVisivel === v ? T.primary : "transparent", color: blocoVisivel === v ? "#fff" : T.textSub }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p style={{ color: T.textSub, fontSize: 12, marginBottom: 4 }}>Regime: <b style={{ color: T.text }}>{regime === "competencia" ? "Competência" : regime === "competencia-completa" ? "Competência Completa" : "Caixa"}</b> — afeta a linha 138. Demais linhas ainda não têm regra de caixa definida.
+              {regime === "competencia-completa" && <span style={{ color: T.warning }}> Abr e Mai têm diferença pontual de ~R$ 15.968,69 vs. a planilha da gestão — em apuração com a contabilidade.</span>}
+            </p>
             <p style={{ color: T.textMuted, fontSize: 11, marginBottom: 4 }}><span style={{ color: T.leaf }}>■</span> ao vivo (importado) &nbsp; <span style={{ color: T.textSub }}>■</span> referência &nbsp; <span style={{ color: T.gold }}>■</span> lucratividade (%)</p>
             <p style={{ color: T.textMuted, fontSize: 11, marginBottom: 16 }}>💬 = comentário original da contabilidade sobre aquela conta.</p>
-            <DreHierarquica T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} importedFlags={importedFlags} />
+            <DreHierarquica T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} importedFlags={importedFlags} blocoVisivel={blocoVisivel} />
           </div>
         )}
         {activeTab === "comparativo" && <ComparativoPeriodos T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
@@ -335,6 +385,7 @@ export default function App() {
         {activeTab === "anomalias" && <AnomaliasTab T={T} limiarPct={limiarPct} setLimiarPct={setLimiarPct} overrides={overrides} />}
         {activeTab === "impostos" && <ImpostosTab T={T} overrides={overrides} />}
         {activeTab === "produtos" && <ProdutosTab T={T} historico={historico} overrides={overrides} />}
+        {activeTab === "clientes" && <ClientesTab T={T} dadosClientes={dadosClientes} />}
         {activeTab === "trimestral" && <AnaliseTrimestral T={T} overrides={overrides} dadosImportados={dadosTrimestral} />}
         {activeTab === "rastreabilidade" && <RastreabilidadeTab T={T} />}
       </ErrorBoundary>
@@ -387,7 +438,7 @@ function TelaLogin({ T }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-function ImportTab({ T, historico, loading, handleFile2107, handleFilesGrupo222, handleFileTermo1, handleFileTermo2, handleFileProdutos1464, handleFileTrimestral, mesesTrimestral }) {
+function ImportTab({ T, historico, loading, handleFile2107, handleFilesGrupo222, handleFileTermo1, handleFileTermo2, handleFileProdutos1464, handleFileTrimestral, mesesTrimestral, handleFileClientes, mesesClientes }) {
   return (
     <div>
       <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Importar relatórios</h1>
@@ -412,6 +463,9 @@ function ImportTab({ T, historico, loading, handleFile2107, handleFilesGrupo222,
         </ImportCard>
         <ImportCard T={T} nome="Comparativo 2025 x 2026" desc="Rotina 2122 · uma aba por mês (JAN, FEV...) · alimenta a Análise Trimestral" badge="AUTOMÁTICO" badgeColor={T.leaf} meses={mesesTrimestral || []} loading={loading === "trimestral"}>
           <label style={botaoStyle(T, false)}>{loading === "trimestral" ? "Processando…" : "📂 Carregar arquivo"}<input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleFileTrimestral} /></label>
+        </ImportCard>
+        <ImportCard T={T} nome="Faturamento por Cliente" desc="Rotina 1464 · uma aba por mês (janeiro, fevereiro...) · alimenta o Top N de clientes" badge="AUTOMÁTICO" badgeColor={T.leaf} meses={mesesClientes || []} loading={loading === "clientes"}>
+          <label style={botaoStyle(T, false)}>{loading === "clientes" ? "Processando…" : "📂 Carregar arquivo"}<input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleFileClientes} /></label>
         </ImportCard>
       </div>
     </div>
@@ -440,7 +494,7 @@ function ReconciliacaoTab({ T, historico, regime }) {
     <div>
       <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Reconciliação Jan-Jul/2026</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 22, maxWidth: 680 }}>Cada valor importado é comparado ao número já validado na auditoria manual (13-20/08/2026).</p>
-      <ReconciliacaoSecao T={T} titulo="Linha 138 — Descontos Concedidos" hist={historico["2107"]} getValor={(h) => regime === "competencia" ? h.extra?.saldoCompetencia : h.extra?.saldoCaixa} oficial={OFICIAL["138"]} soComparaCompetencia={regime === "competencia"} />
+      <ReconciliacaoSecao T={T} titulo="Linha 138 — Descontos Concedidos" hist={historico["2107"]} getValor={(h) => valorLinha138(h, regime)} oficial={OFICIAL["138"]} soComparaCompetencia={regime === "competencia"} />
       <ReconciliacaoSecao T={T} titulo="Linha 209 — Despesas Grupo 222" hist={historico["750-222"]} getValor={(h) => h.valor} oficial={OFICIAL["209"]} soComparaCompetencia />
       <ReconciliacaoSecao T={T} titulo="Linha 211 — Grupo 750 (termo 1 + termo 2)" hist={combinarTermos(historico["124-750"], historico["750-caixa10"])} getValor={(h) => h.valor} oficial={OFICIAL["211"]} soComparaCompetencia />
     </div>
@@ -589,7 +643,10 @@ function AnomaliasTab({ T, limiarPct, setLimiarPct, overrides }) {
               <tr key={i} style={{ background: a.isTotal ? T.goldDim : "transparent" }}>
                 <td style={{ padding: "6px 10px", borderBottom: `1px solid ${T.border}`, fontWeight: 700 }}>{MESES_LABEL[a.mes]}</td>
                 <td style={{ padding: "6px 10px", borderBottom: `1px solid ${T.border}`, color: T.textMuted }}>{a.row}</td>
-                <td style={{ padding: "6px 10px", borderBottom: `1px solid ${T.border}` }}>{a.label}</td>
+                <td style={{ padding: "6px 10px", borderBottom: `1px solid ${T.border}` }}>
+                  {a.label}
+                  {a.secao && <div style={{ fontSize: 10, color: T.textMuted }}>{a.secao}</div>}
+                </td>
                 <td style={{ padding: "6px 10px", borderBottom: `1px solid ${T.border}` }}>
                   {a.isTotal ? <span style={{ fontSize: 9, fontWeight: 700, color: T.gold, border: `1px solid ${T.gold}55`, borderRadius: 4, padding: "1px 5px" }}>TOTAL</span> : <span style={{ fontSize: 9, color: T.textMuted }}>detalhe</span>}
                 </td>

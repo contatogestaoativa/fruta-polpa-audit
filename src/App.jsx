@@ -14,6 +14,7 @@ import { parseGrupo750Termo1Lote, parseGrupo750Termo2Lote, ehLoteMultiMes } from
 import { parseProdutos1464, calcularTicketMedio } from "./lib/parsers/produtos1464.js";
 import { parseClientes1464, ehArquivoClientes1464 } from "./lib/parsers/clientes1464.js";
 import ClientesTab from "./components/ClientesTab.jsx";
+import { agruparPorDepartamento } from "./lib/departamentos.js";
 import { detectarAnomalia } from "./lib/parsers/anomalyDetection.js";
 import {
   persistenceEnabled, signIn, signOut, getSessaoEPerfil, onAuthChange,
@@ -762,12 +763,16 @@ function ProdutosTab({ T, historico, overrides }) {
   const lucratividadeGerencial = overrides?.[mesSelecionado]?.[214] != null ? overrides[mesSelecionado][214] * 100 : null;
   const lucratividadeContabil = overrides?.[mesSelecionado]?.[204] != null ? overrides[mesSelecionado][204] * 100 : null;
   const maiorFaturamento = Math.max(1, ...dadosMes.produtos.map((p) => p.faturamento || 0));
+  // Exibição em ordem alfabética por descrição, separada por departamento
+  // comercial (Polpas / Açaí / Morango Congelado). A regra de classificação
+  // mora em src/lib/departamentos.js.
+  const departamentos = agruparPorDepartamento(dadosMes.produtos, dadosMes.totalFaturamento);
 
   return (
     <div>
       <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Mix de Vendas</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 8, maxWidth: 680 }}>
-        Quantidade vendida, preço médio e participação por sabor (Rotina 1464). O painel abaixo é <b>comparativo visual</b>, não um coeficiente estatístico — com 7 meses de histórico, uma correlação formal seria pouco confiável; aqui o objetivo é permitir enxergar o padrão a olho.
+        Quantidade vendida, preço médio e participação por sabor (Rotina 1464), <b>separados por departamento comercial</b> e em ordem alfabética dentro de cada um. O painel abaixo é <b>comparativo visual</b>, não um coeficiente estatístico — com 7 meses de histórico, uma correlação formal seria pouco confiável; aqui o objetivo é permitir enxergar o padrão a olho.
       </p>
       <label style={{ fontSize: 12, color: T.textSub, display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>Mês:
         <select value={mesSelecionado} onChange={(e) => setMesSelecionado(e.target.value)} style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "5px 10px", fontSize: 12 }}>
@@ -783,7 +788,21 @@ function ProdutosTab({ T, historico, overrides }) {
         <StatCard T={T} label="Qtd. Total Vendida" value={dadosMes.totalQuantidade.toLocaleString("pt-BR")} sub="unidades no mês" accent={T.leaf} />
       </div>
 
-      {/* Tabela de produtos com barra de participação */}
+      {/* Resumo por departamento comercial */}
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+        {departamentos.map((dep) => (
+          <StatCard
+            key={dep.id}
+            T={T}
+            label={dep.label}
+            value={`R$ ${dep.totalFaturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+            sub={`${dep.pctParticipacao.toFixed(2)}% do faturamento · ${dep.produtos.length} ${dep.produtos.length === 1 ? "item" : "itens"} · ${dep.totalQuantidade.toLocaleString("pt-BR")} un.`}
+            accent={T.text}
+          />
+        ))}
+      </div>
+
+      {/* Tabela de produtos, por departamento, em ordem alfabética */}
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead><tr>
@@ -791,24 +810,45 @@ function ProdutosTab({ T, historico, overrides }) {
               <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: T.textMuted, fontWeight: 700, fontSize: 10, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
             ))}
           </tr></thead>
-          <tbody>
-            {dadosMes.produtos.map((p) => (
-              <tr key={p.codigo}>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}` }}>{p.descricao}</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{p.quantidade.toLocaleString("pt-BR")}</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {p.faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {p.precoMedio?.toFixed(2)}</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{p.pctParticipacao.toFixed(2)}%</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, minWidth: 140 }}>
-                  <div style={{ background: T.border, borderRadius: 3, height: 8, width: "100%" }}>
-                    <div style={{ background: T.primary, borderRadius: 3, height: 8, width: `${(p.faturamento / maiorFaturamento) * 100}%` }} />
-                  </div>
-                </td>
+          {departamentos.map((dep) => (
+            <tbody key={dep.id}>
+              <tr>
+                <th colSpan={6} style={{ textAlign: "left", padding: "14px 10px 7px", background: T.surface, borderTop: `2px solid ${T.borderHi}`, borderBottom: `1px solid ${T.border}`, fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: T.text }}>
+                  ▸ {dep.label}
+                  <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: T.textSub, marginLeft: 8 }}>
+                    {dep.produtos.length} {dep.produtos.length === 1 ? "item" : "itens"} · A → Z
+                  </span>
+                </th>
               </tr>
-            ))}
-          </tbody>
+              {dep.produtos.map((p) => (
+                <tr key={p.codigo}>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}` }}>{p.descricao}</td>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{p.quantidade.toLocaleString("pt-BR")}</td>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {p.faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {p.precoMedio?.toFixed(2)}</td>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{p.pctParticipacao.toFixed(2)}%</td>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, minWidth: 140 }}>
+                    <div style={{ background: T.border, borderRadius: 3, height: 8, width: "100%" }}>
+                      <div style={{ background: T.primary, borderRadius: 3, height: 8, width: `${(p.faturamento / maiorFaturamento) * 100}%` }} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700 }}>Subtotal {dep.label}</td>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>{dep.totalQuantidade.toLocaleString("pt-BR")}</td>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>R$ {dep.totalFaturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}` }}></td>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>{dep.pctParticipacao.toFixed(2)}%</td>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}` }}></td>
+              </tr>
+            </tbody>
+          ))}
         </table>
       </div>
+      <p style={{ color: T.textMuted, fontSize: 11, marginTop: 12, maxWidth: 680 }}>
+        A Rotina 1464 não traz o departamento: ele é deduzido da descrição do produto (regra em <code>src/lib/departamentos.js</code>). "Morango Congelado" só captura a descrição que diz <b>congelado</b> — o sabor "MORANGO" sozinho continua em Polpas. Produto classificado errado se corrige pelo código em <code>DEPARTAMENTO_POR_CODIGO</code>.
+      </p>
     </div>
   );
 }

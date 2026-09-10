@@ -140,10 +140,23 @@ export function calcularCargaTributaria(mes, dreNodes, overrides) {
 // opcoes.porFechamento = compara valor POR FECHAMENTO (valor do mês ÷
 // nº de sextas-feiras do mês), para não acusar anomalia num mês de 5
 // fechamentos comparado a meses de 4.
+//
+// "secao" = rótulo da seção-mãe (nível 0 mais próximo acima) — usado
+// para desambiguar contas com nome igual em seções diferentes (ex:
+// "FGTS" existe tanto em Custos c/ Pessoal — produção — quanto em
+// Despesas c/ Pessoal — administrativo; são contas reais distintas,
+// não duplicidade de dado, só precisavam aparecer com o contexto certo).
 // ═══════════════════════════════════════════════════════════════════
 export function detectarAnomaliasTodasLinhas(dreNodes, overrides, limiarPct, opcoes = {}) {
   const { porFechamento = false } = opcoes;
   const achados = [];
+
+  let secaoAtual = null;
+  const secaoPorRow = {};
+  for (const n of dreNodes) {
+    if (n.level === 0) secaoAtual = n.label;
+    secaoPorRow[n.row] = secaoAtual;
+  }
 
   const normalizar = (valor, mes) => {
     if (typeof valor !== "number" || Number.isNaN(valor)) return null;
@@ -169,6 +182,7 @@ export function detectarAnomaliasTodasLinhas(dreNodes, overrides, limiarPct, opc
       if (absVar <= limiarPct) continue;
       achados.push({
         mes, row: node.row, label: node.label, isTotal: node.level === 0,
+        secao: node.level === 0 ? null : secaoPorRow[node.row],
         valor: round2(valorAtual), media: round2(media), delta: round2(delta), variacaoPct,
         porFechamento,
         nivel: absVar > limiarPct * 2 ? "critico" : "atencao",

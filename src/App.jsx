@@ -26,17 +26,17 @@ import { fechamentosNoMes } from "./lib/fechamentos.js";
 import { DRE_NODES } from "./lib/dreNodes.js";
 
 const TABS = [
-  { id: "import", label: "Importar" },
-  { id: "dre", label: "DRE" },
-  { id: "comparativo", label: "Comparativo" },
-  { id: "resumo", label: "Resumo do Mês" },
-  { id: "reconciliacao", label: "Reconciliação" },
-  { id: "anomalias", label: "Anomalias" },
-  { id: "impostos", label: "Receita x Lucro x Impostos" },
-  { id: "produtos", label: "Mix de Vendas" },
-  { id: "clientes", label: "Faturamento por Cliente" },
-  { id: "trimestral", label: "Análise Trimestral" },
-  { id: "rastreabilidade", label: "Rastreabilidade" },
+  { id: "import", label: "Importar", icon: "📥" },
+  { id: "dre", label: "DRE", icon: "📊" },
+  { id: "comparativo", label: "Comparativo", icon: "🔀" },
+  { id: "resumo", label: "Resumo do Mês", icon: "📝" },
+  { id: "reconciliacao", label: "Reconciliação", icon: "✅" },
+  { id: "anomalias", label: "Anomalias", icon: "⚠️" },
+  { id: "impostos", label: "Receita x Lucro x Impostos", icon: "💰" },
+  { id: "produtos", label: "Mix de Vendas", icon: "🍓" },
+  { id: "clientes", label: "Faturamento por Cliente", icon: "👥" },
+  { id: "trimestral", label: "Análise Trimestral", icon: "📅" },
+  { id: "rastreabilidade", label: "Rastreabilidade", icon: "🔍" },
 ];
 
 // mapeia rotina do app -> linha numérica da DRE (usado ao gravar no Supabase)
@@ -84,6 +84,7 @@ export default function App() {
   const [limiarPct, setLimiarPct] = useState(20);
   const [regime, setRegime] = useState("competencia");
   const [blocoVisivel, setBlocoVisivel] = useState("ambos"); // "ambos" | "contabil" | "gerencial"
+  const [sidebarAberta, setSidebarAberta] = useState(true);
 
   // ── Autenticação ──
   const [authLoading, setAuthLoading] = useState(persistenceEnabled);
@@ -297,29 +298,53 @@ export default function App() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: T.fontBody, transition: "background .15s, color .15s" }}>
-      <div style={{
-        background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 20px", minHeight: 60,
-        display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", columnGap: 16,
-        position: "sticky", top: 0, zIndex: 1000, boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-      }}>
-        <div style={{ flexShrink: 0 }}><Logo T={T} height={32} /></div>
+    <div style={{ minHeight: "100vh", display: "flex", background: T.bg, color: T.text, fontFamily: T.fontBody, transition: "background .15s, color .15s" }}>
 
-        <div style={{ display: "flex", justifyContent: "center", minWidth: 0, padding: "8px 0" }}>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "center" }}>
-            {TABS.map((tab) => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
-                background: activeTab === tab.id ? T.primaryDim : "transparent",
-                border: `1px solid ${activeTab === tab.id ? T.primary : "transparent"}`,
-                borderRadius: 6, padding: "6px 14px", color: activeTab === tab.id ? T.primary : T.textSub,
-                fontSize: 13, fontWeight: activeTab === tab.id ? 700 : 500, cursor: "pointer", whiteSpace: "nowrap",
-              }}>{tab.label}</button>
-            ))}
-          </div>
+      {/* ── BARRA LATERAL (recolhível, tipo Claude) ── */}
+      <aside style={{
+        width: sidebarAberta ? 232 : 60, flexShrink: 0, transition: "width .18s ease",
+        background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column",
+        position: "sticky", top: 0, height: "100vh", overflow: "hidden", zIndex: 1000,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: sidebarAberta ? "space-between" : "center", padding: "14px 12px", borderBottom: `1px solid ${T.border}`, minHeight: 60, boxSizing: "border-box" }}>
+          {sidebarAberta && <Logo T={T} height={28} showText={false} />}
+          <button onClick={() => setSidebarAberta((v) => !v)} title={sidebarAberta ? "Recolher menu" : "Expandir menu"}
+            style={{ background: "transparent", border: `1px solid ${T.borderHi}`, borderRadius: 6, width: 28, height: 28, color: T.textSub, cursor: "pointer", fontSize: 13, flexShrink: 0 }}>
+            {sidebarAberta ? "«" : "»"}
+          </button>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", justifySelf: "end", padding: "8px 0" }}>
-          <div style={{ display: "flex", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2, flexShrink: 0 }}>
+        <nav style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "10px 8px" }}>
+          {TABS.map((tab) => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} title={!sidebarAberta ? tab.label : undefined}
+              style={{
+                display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", marginBottom: 2,
+                borderRadius: 8, border: "none", cursor: "pointer", textAlign: "left",
+                background: activeTab === tab.id ? T.primaryDim : "transparent",
+                color: activeTab === tab.id ? T.primary : T.textSub, fontWeight: activeTab === tab.id ? 700 : 500, fontSize: 13,
+                justifyContent: sidebarAberta ? "flex-start" : "center",
+              }}>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>{tab.icon}</span>
+              {sidebarAberta && <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tab.label}</span>}
+            </button>
+          ))}
+        </nav>
+
+        <div style={{ padding: 10, borderTop: `1px solid ${T.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
+          <button onClick={() => setTema(tema === "dark" ? "light" : "dark")} title="Alternar tema claro/escuro"
+            style={{ border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", background: T.bg, color: T.textSub, display: "flex", alignItems: "center", gap: 8, justifyContent: sidebarAberta ? "flex-start" : "center" }}>
+            <span>{tema === "dark" ? "☀" : "●"}</span>{sidebarAberta && <span>{tema === "dark" ? "Tema Claro" : "Tema Escuro"}</span>}
+          </button>
+          <span title={persistenceEnabled ? "Supabase conectado" : "Modo local"} style={{ fontSize: 10, fontWeight: 700, padding: "6px 10px", borderRadius: 6, textAlign: "center", background: persistenceEnabled ? T.leaf + "1E" : T.warning + "1E", color: persistenceEnabled ? T.leaf : T.warning, border: `1px solid ${(persistenceEnabled ? T.leaf : T.warning)}55`, whiteSpace: "nowrap", overflow: "hidden" }}>
+            {sidebarAberta ? (persistenceEnabled ? "● Supabase conectado" : "○ Modo local") : "●"}
+          </span>
+        </div>
+      </aside>
+
+      {/* ── ÁREA PRINCIPAL ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 20px", minHeight: 60, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, flexWrap: "wrap", position: "sticky", top: 0, zIndex: 900, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+          <div style={{ display: "flex", background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2, flexShrink: 0 }}>
             {["competencia", "competencia-completa", "caixa"].map((r) => (
               <button key={r} onClick={() => setRegime(r)}
                 title={r === "competencia-completa" ? "Reatribui cada título ao mês de competência real (não só ano anterior). Validado contra a planilha da gestão em 5 de 7 meses; Abr e Mai têm uma diferença pontual de ~R$ 15.968,69 ainda em apuração." : undefined}
@@ -328,22 +353,15 @@ export default function App() {
               </button>
             ))}
           </div>
-          <button onClick={() => setTema(tema === "dark" ? "light" : "dark")} title="Alternar tema claro/escuro" style={{ border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, background: T.surface, color: T.textSub }}>
-            {tema === "dark" ? "☀ Claro" : "● Escuro"}
-          </button>
           {persistenceEnabled && (
             <span style={{ fontSize: 11, color: T.textSub, display: "flex", alignItems: "center", gap: 8, flexShrink: 0, whiteSpace: "nowrap" }}>
               {perfil?.nome || session?.user?.email} <span style={{ fontSize: 9, fontWeight: 700, color: T.gold, border: `1px solid ${T.gold}55`, borderRadius: 10, padding: "1px 6px" }}>{perfil?.papel || "?"}</span>
               <button onClick={signOut} style={{ background: "transparent", border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "6px 14px", color: T.textSub, fontSize: 11, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap" }}>Sair</button>
             </span>
           )}
-          <span style={{ fontSize: 11, fontWeight: 700, padding: "6px 14px", lineHeight: 1, borderRadius: 20, whiteSpace: "nowrap", flexShrink: 0, background: persistenceEnabled ? T.leaf + "1E" : T.warning + "1E", color: persistenceEnabled ? T.leaf : T.warning, border: `1px solid ${(persistenceEnabled ? T.leaf : T.warning)}55` }}>
-            {persistenceEnabled ? "● Supabase conectado" : "○ Modo local"}
-          </span>
         </div>
-      </div>
 
-      <div style={{ padding: "24px 28px", maxWidth: 1280, margin: "0 auto" }}>
+      <div style={{ padding: "24px 28px", maxWidth: 1280, margin: "0 auto", width: "100%" }}>
       <ErrorBoundary key={activeTab}>
         {activeTab === "import" && (
           podeGerenciarImportacao ? (
@@ -396,6 +414,7 @@ export default function App() {
       <div style={{ marginTop: 40, padding: "20px 28px", borderTop: `1px solid ${T.border}`, opacity: 0.6, display: "flex", justifyContent: "space-between" }}>
         <Logo T={T} height={18} showText={false} />
         <div style={{ fontSize: 10, color: T.textMuted }}>FRUTA POLPA · SISTEMA DE AUDITORIA GERENCIAL</div>
+      </div>
       </div>
     </div>
   );

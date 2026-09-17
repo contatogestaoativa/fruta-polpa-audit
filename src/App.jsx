@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, Component } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef, Component } from "react";
 import * as XLSX from "xlsx";
 import { THEMES } from "./theme.js";
 import { Logo } from "./components/Logo.jsx";
@@ -14,8 +14,8 @@ import { parseGrupo750Termo1Lote, parseGrupo750Termo2Lote, ehLoteMultiMes } from
 import { parseProdutos1464, calcularTicketMedio } from "./lib/parsers/produtos1464.js";
 import { parseClientes1464, ehArquivoClientes1464 } from "./lib/parsers/clientes1464.js";
 import ClientesTab from "./components/ClientesTab.jsx";
-import GraficoEvolucao from "./components/GraficoEvolucao.jsx";
-import { categorizarProduto, listarGruposProdutos } from "./lib/categorizacaoProdutos.js";
+import MixEvolucao from "./components/MixEvolucao.jsx";
+import { agruparPorDepartamento } from "./lib/departamentos.js";
 import { detectarAnomalia } from "./lib/parsers/anomalyDetection.js";
 import {
   persistenceEnabled, signIn, signOut, getSessaoEPerfil, onAuthChange,
@@ -120,6 +120,11 @@ export default function App() {
     return () => { ativo = false; unsubscribe(); };
   }, []);
 
+  // Falha de gravacao no Supabase costumava passar em branco: a tela
+  // mostrava o mes importado (estado local) e o banco nao recebia nada.
+  // Ao recarregar, sumia. Agora a falha vira aviso na tela.
+  const [falhaPersistencia, setFalhaPersistencia] = useState(null);
+
   const gravar = useCallback((rotina, mes, arquivo, valor, extra) => {
     if (!mes) return;
     setHistorico((prev) => {
@@ -130,7 +135,13 @@ export default function App() {
       importarLoteEGravarLinha({
         rotina, mesReferencia: `${mes}-01`, nomeArquivo: arquivo,
         linhaNumero: LINHA_POR_ROTINA[rotina], valor, regime, extra,
-      });
+      })
+        .then((r) => {
+          if (!r?.ok || r.linhaGravada === false) {
+            setFalhaPersistencia({ rotina, mes, motivo: r?.motivo || "o banco recusou a gravacao (verifique o papel do usuario)" });
+          }
+        })
+        .catch((err) => setFalhaPersistencia({ rotina, mes, motivo: err?.message || String(err) }));
     }
   }, [regime]);
 
@@ -218,7 +229,20 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   }, [gravar]);
 
-  const [dadosClientes, setDadosClientes] = useState({});
+  // Faturamento por Cliente vive no MESMO historico das outras rotinas
+  // (e nao num useState solto), porque e o historico que vai e volta do
+  // Supabase. Era esse o motivo de o import sumir ao recarregar a pagina
+  // e de nao aparecer para o resto do time.
+  const dadosClientes = useMemo(() => {
+    const registros = historico["1464-clientes"] || {};
+    const saida = {};
+    for (const mes of Object.keys(registros)) {
+      const extra = registros[mes]?.extra;
+      if (extra && Array.isArray(extra.clientes)) saida[mes] = extra;
+    }
+    return saida;
+  }, [historico]);
+
   const handleFileClientes = useCallback((e) => {
     const file = e.target.files[0]; if (!file) return;
     setLoading("clientes");
@@ -230,13 +254,16 @@ export default function App() {
           alert("Não reconheci nenhuma aba com nome de mês (janeiro, fevereiro...) neste arquivo.");
         } else {
           const resultado = parseClientes1464(wb, XLSX.utils, 2026);
-          setDadosClientes((prev) => ({ ...prev, ...resultado }));
+          for (const mes of Object.keys(resultado)) {
+            gravar("1464-clientes", mes, file.name, resultado[mes].totalFaturamento, resultado[mes]);
+          }
+          if (Object.keys(resultado).length === 0) alert("Não encontrei nenhum mês reconhecível nas abas deste arquivo.");
         }
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("clientes"); e.target.value = "";
     };
     reader.readAsArrayBuffer(file);
-  }, []);
+  }, [gravar]);
 
   const [dadosTrimestral, setDadosTrimestral] = useState({});
   const handleFileTrimestral = useCallback((e) => {
@@ -289,6 +316,22 @@ export default function App() {
   const hasData = Object.values(historico).some((h) => Object.keys(h).length > 0);
   const podeGerenciarImportacao = podeImportar(perfil);
 
+  // O topo do site e sticky e a altura dele MUDA conforme as abas
+  // quebram em mais linhas. Qualquer cabecalho de tabela que queira
+  // ficar congelado precisa parar logo abaixo dele — por isso a altura
+  // vai para uma variavel CSS em vez de um numero chutado no estilo.
+  const refTopo = useRef(null);
+  useEffect(() => {
+    const el = refTopo.current;
+    if (!el) return;
+    const publicar = () => document.documentElement.style.setProperty("--altura-topo", `${el.offsetHeight}px`);
+    publicar();
+    const observador = new ResizeObserver(publicar);
+    observador.observe(el);
+    window.addEventListener("resize", publicar);
+    return () => { observador.disconnect(); window.removeEventListener("resize", publicar); };
+  }, [authLoading, session]);
+
   // ── Portões de tela: carregando / login ──
   if (authLoading) {
     return <TelaCarregando T={T} />;
@@ -329,21 +372,11 @@ export default function App() {
             </button>
           ))}
         </nav>
-
-        <div style={{ padding: 10, borderTop: `1px solid ${T.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
-          <button onClick={() => setTema(tema === "dark" ? "light" : "dark")} title="Alternar tema claro/escuro"
-            style={{ border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", background: T.bg, color: T.textSub, display: "flex", alignItems: "center", gap: 8, justifyContent: sidebarAberta ? "flex-start" : "center" }}>
-            <span>{tema === "dark" ? "☀" : "●"}</span>{sidebarAberta && <span>{tema === "dark" ? "Tema Claro" : "Tema Escuro"}</span>}
-          </button>
-          <span title={persistenceEnabled ? "Supabase conectado" : "Modo local"} style={{ fontSize: 10, fontWeight: 700, padding: "6px 10px", borderRadius: 6, textAlign: "center", background: persistenceEnabled ? T.leaf + "1E" : T.warning + "1E", color: persistenceEnabled ? T.leaf : T.warning, border: `1px solid ${(persistenceEnabled ? T.leaf : T.warning)}55`, whiteSpace: "nowrap", overflow: "hidden" }}>
-            {sidebarAberta ? (persistenceEnabled ? "● Supabase conectado" : "○ Modo local") : "●"}
-          </span>
-        </div>
       </aside>
 
       {/* ── ÁREA PRINCIPAL ── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <div style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 20px", minHeight: 60, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, flexWrap: "wrap", position: "sticky", top: 0, zIndex: 900, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+        <div ref={refTopo} style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 20px", minHeight: 60, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, flexWrap: "wrap", position: "sticky", top: 0, zIndex: 900, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
           <div style={{ display: "flex", background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2, flexShrink: 0 }}>
             {["competencia", "competencia-completa", "caixa"].map((r) => (
               <button key={r} onClick={() => setRegime(r)}
@@ -353,15 +386,31 @@ export default function App() {
               </button>
             ))}
           </div>
+          <button onClick={() => setTema(tema === "dark" ? "light" : "dark")} title="Alternar tema claro/escuro" style={{ border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, background: T.surface, color: T.textSub }}>
+            {tema === "dark" ? "☀ Claro" : "● Escuro"}
+          </button>
           {persistenceEnabled && (
             <span style={{ fontSize: 11, color: T.textSub, display: "flex", alignItems: "center", gap: 8, flexShrink: 0, whiteSpace: "nowrap" }}>
               {perfil?.nome || session?.user?.email} <span style={{ fontSize: 9, fontWeight: 700, color: T.gold, border: `1px solid ${T.gold}55`, borderRadius: 10, padding: "1px 6px" }}>{perfil?.papel || "?"}</span>
               <button onClick={signOut} style={{ background: "transparent", border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "6px 14px", color: T.textSub, fontSize: 11, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap" }}>Sair</button>
             </span>
           )}
+          <span style={{ fontSize: 11, fontWeight: 700, padding: "6px 14px", lineHeight: 1, borderRadius: 20, whiteSpace: "nowrap", flexShrink: 0, background: persistenceEnabled ? T.leaf + "1E" : T.warning + "1E", color: persistenceEnabled ? T.leaf : T.warning, border: `1px solid ${(persistenceEnabled ? T.leaf : T.warning)}55` }}>
+            {persistenceEnabled ? "● Supabase conectado" : "○ Modo local"}
+          </span>
         </div>
 
       <div style={{ padding: "24px 28px", maxWidth: 1280, margin: "0 auto", width: "100%" }}>
+      {falhaPersistencia && (
+        <div role="alert" style={{ border: `1px solid ${T.warning}`, background: T.warning + "1E", borderRadius: 8, padding: "12px 14px", marginBottom: 18, fontSize: 12, color: T.text, display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <b style={{ whiteSpace: "nowrap" }}>⚠ NÃO SALVO</b>
+          <span style={{ flex: 1 }}>
+            O import de <b>{falhaPersistencia.rotina}</b> ({falhaPersistencia.mes}) apareceu na tela mas <b>não foi gravado no banco</b> — ao recarregar, ele some, e o resto do time não vê.
+            Motivo: {falhaPersistencia.motivo}
+          </span>
+          <button onClick={() => setFalhaPersistencia(null)} style={{ background: "transparent", border: `1px solid ${T.borderHi}`, borderRadius: 6, padding: "4px 10px", color: T.textSub, fontSize: 11, cursor: "pointer" }}>Fechar</button>
+        </div>
+      )}
       <ErrorBoundary key={activeTab}>
         {activeTab === "import" && (
           podeGerenciarImportacao ? (
@@ -746,6 +795,12 @@ function ImpostosTab({ T, overrides }) {
   );
 }
 // ═══════════════════════════════════════════════════════════════════
+// Alturas fixas das duas faixas congeladas da tabela do Mix. Precisam
+// ser numero conhecido porque a segunda faixa (o departamento) para
+// logo abaixo da primeira.
+const ALTURA_CABECALHO = 30;
+const ALTURA_DEPARTAMENTO = 30;
+
 function ProdutosTab({ T, historico, overrides }) {
   const dados1464 = historico["1464-produtos"] || {};
   const mesesDisponiveis = Object.keys(dados1464).sort();
@@ -783,33 +838,16 @@ function ProdutosTab({ T, historico, overrides }) {
   const lucratividadeGerencial = overrides?.[mesSelecionado]?.[214] != null ? overrides[mesSelecionado][214] * 100 : null;
   const lucratividadeContabil = overrides?.[mesSelecionado]?.[204] != null ? overrides[mesSelecionado][204] * 100 : null;
   const maiorFaturamento = Math.max(1, ...dadosMes.produtos.map((p) => p.faturamento || 0));
-
-  // Catálogo + série mensal p/ o gráfico de evolução — junta TODOS os
-  // meses importados (não só o selecionado no seletor de cima).
-  const { catalogoProdutos, valoresProdutos, gruposProdutos } = useMemo(() => {
-    const catalogo = new Map();
-    const valores = new Map();
-    mesesDisponiveis.forEach((mes) => {
-      const produtos = dados1464[mes]?.extra?.produtos || [];
-      produtos.forEach((p) => {
-        const chave = String(p.codigo ?? p.descricao);
-        if (!catalogo.has(chave)) {
-          const cat = categorizarProduto(p.descricao);
-          catalogo.set(chave, { chave, rotulo: p.descricao, grupo: cat.id, grupoLabel: cat.label });
-        }
-        if (!valores.has(chave)) valores.set(chave, {});
-        valores.get(chave)[mes] = { quantidade: p.quantidade, faturamento: p.faturamento, precoMedio: p.precoMedio };
-      });
-    });
-    const lista = Array.from(catalogo.values());
-    return { catalogoProdutos: lista, valoresProdutos: valores, gruposProdutos: listarGruposProdutos(lista) };
-  }, [dados1464, mesesDisponiveis.join(",")]);
+  // Exibição em ordem alfabética por descrição, separada por departamento
+  // comercial (Polpas / Açaí / Morango Congelado). A regra de classificação
+  // mora em src/lib/departamentos.js.
+  const departamentos = agruparPorDepartamento(dadosMes.produtos, dadosMes.totalFaturamento);
 
   return (
     <div>
       <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Mix de Vendas</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 8, maxWidth: 680 }}>
-        Quantidade vendida, preço médio e participação por sabor (Rotina 1464). O painel abaixo é <b>comparativo visual</b>, não um coeficiente estatístico — com 7 meses de histórico, uma correlação formal seria pouco confiável; aqui o objetivo é permitir enxergar o padrão a olho.
+        Quantidade vendida, preço médio e participação por sabor (Rotina 1464), <b>separados por departamento comercial</b> e em ordem alfabética dentro de cada um. O painel abaixo é <b>comparativo visual</b>, não um coeficiente estatístico — com 7 meses de histórico, uma correlação formal seria pouco confiável; aqui o objetivo é permitir enxergar o padrão a olho.
       </p>
       <label style={{ fontSize: 12, color: T.textSub, display: "flex", alignItems: "center", gap: 8, marginBottom: 20 }}>Mês:
         <select value={mesSelecionado} onChange={(e) => setMesSelecionado(e.target.value)} style={{ background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "5px 10px", fontSize: 12 }}>
@@ -825,36 +863,87 @@ function ProdutosTab({ T, historico, overrides }) {
         <StatCard T={T} label="Qtd. Total Vendida" value={dadosMes.totalQuantidade.toLocaleString("pt-BR")} sub="unidades no mês" accent={T.leaf} />
       </div>
 
-      {/* Tabela de produtos com barra de participação */}
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-          <thead><tr>
-            {["Sabor", "Qtd.", "Faturamento", "Preço Médio", "% Participação", "Mix"].map((h) => (
-              <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: T.textMuted, fontWeight: 700, fontSize: 10, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {dadosMes.produtos.map((p) => (
-              <tr key={p.codigo}>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}` }}>{p.descricao}</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{p.quantidade.toLocaleString("pt-BR")}</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {p.faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {p.precoMedio?.toFixed(2)}</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{p.pctParticipacao.toFixed(2)}%</td>
-                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, minWidth: 140 }}>
-                  <div style={{ background: T.border, borderRadius: 3, height: 8, width: "100%" }}>
-                    <div style={{ background: T.primary, borderRadius: 3, height: 8, width: `${(p.faturamento / maiorFaturamento) * 100}%` }} />
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Resumo por departamento comercial — cada um com o ticket médio próprio */}
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 24 }}>
+        {departamentos.map((dep) => (
+          <StatCard
+            key={dep.id}
+            T={T}
+            label={`${dep.label} · ticket médio`}
+            value={dep.ticketMedio != null ? `R$ ${dep.ticketMedio.toFixed(2)}` : "—"}
+            sub={`R$ ${dep.totalFaturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ÷ ${dep.totalQuantidade.toLocaleString("pt-BR")} un. · ${dep.pctParticipacao.toFixed(2)}% do faturamento · ${dep.produtos.length} ${dep.produtos.length === 1 ? "item" : "itens"}`}
+            accent={T.text}
+          />
+        ))}
       </div>
 
-      <GraficoEvolucao T={T} meses={mesesDisponiveis} catalogo={catalogoProdutos} valores={valoresProdutos}
-        grupos={gruposProdutos} titulo="Evolução por Sabor" nomeItem="Sabores"
-        descricao="Acompanhe a evolução de quantidade, faturamento ou preço médio de cada sabor ao longo dos meses. Filtre por categoria (Açaí, Morango, Mix...) e passe o mouse no gráfico para ver os valores do mês." />
+      {/* Tabela de produtos, por departamento, em ordem alfabética.
+          O cabeçalho fica congelado: a rolagem acontece dentro da caixa,
+          não na página, e os <th> ficam grudados no topo dela. Por isso
+          borderCollapse é "separate" — com "collapse" a borda do cabeçalho
+          fixo some ao rolar. */}
+      <div>
+        <table style={{ width: "100%", minWidth: 700, borderCollapse: "separate", borderSpacing: 0, fontSize: 12 }}>
+          <thead><tr>
+            {["Sabor", "Qtd.", "Faturamento", "Preço Médio", "% Participação", "Mix"].map((h) => (
+              <th key={h} style={{
+                textAlign: "left", padding: "0 10px", height: ALTURA_CABECALHO, color: T.textMuted, fontWeight: 700, fontSize: 10,
+                whiteSpace: "nowrap", position: "sticky", top: "var(--altura-topo, 0px)", zIndex: 3,
+                background: T.bg, boxShadow: `inset 0 -1px 0 ${T.borderHi}`,
+              }}>{h}</th>
+            ))}
+          </tr></thead>
+          {departamentos.map((dep) => (
+            <tbody key={dep.id}>
+              <tr>
+                <th colSpan={6} style={{
+                  textAlign: "left", padding: "0 10px", height: ALTURA_DEPARTAMENTO, background: T.surface,
+                  boxShadow: `inset 0 2px 0 ${T.borderHi}, inset 0 -1px 0 ${T.border}`,
+                  fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase", color: T.text,
+                  position: "sticky", top: `calc(var(--altura-topo, 0px) + ${ALTURA_CABECALHO}px)`, zIndex: 2,
+                }}>
+                  ▸ {dep.label}
+                  <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, color: T.textSub, marginLeft: 8 }}>
+                    {dep.produtos.length} {dep.produtos.length === 1 ? "item" : "itens"} · A → Z · ticket médio {dep.ticketMedio != null ? `R$ ${dep.ticketMedio.toFixed(2)}` : "—"}
+                  </span>
+                </th>
+              </tr>
+              {dep.produtos.map((p) => (
+                <tr key={p.codigo}>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}` }}>{p.descricao}</td>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{p.quantidade.toLocaleString("pt-BR")}</td>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {p.faturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>R$ {p.precoMedio?.toFixed(2)}</td>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{p.pctParticipacao.toFixed(2)}%</td>
+                  <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.border}`, minWidth: 140 }}>
+                    <div style={{ background: T.border, borderRadius: 3, height: 8, width: "100%" }}>
+                      <div style={{ background: T.primary, borderRadius: 3, height: 8, width: `${(p.faturamento / maiorFaturamento) * 100}%` }} />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700 }}>Subtotal {dep.label}</td>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>{dep.totalQuantidade.toLocaleString("pt-BR")}</td>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>R$ {dep.totalFaturamento.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td title="Ticket médio da categoria: faturamento ÷ quantidade" style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {dep.ticketMedio != null ? `R$ ${dep.ticketMedio.toFixed(2)}` : "—"}
+                </td>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}`, fontWeight: 700, whiteSpace: "nowrap" }}>{dep.pctParticipacao.toFixed(2)}%</td>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${T.borderHi}` }}></td>
+              </tr>
+            </tbody>
+          ))}
+        </table>
+      </div>
+      <p style={{ color: T.textMuted, fontSize: 11, marginTop: 12, maxWidth: 700 }}>
+        O <b>ticket médio da categoria</b> é o faturamento dela dividido pela quantidade dela — não é a média dos preços médios dos sabores, que ignoraria o peso de cada um. Ele aparece na coluna "Preço Médio" da linha de subtotal.
+      </p>
+      <p style={{ color: T.textMuted, fontSize: 11, marginTop: 6, maxWidth: 700 }}>
+        A Rotina 1464 não traz o departamento: ele é deduzido da descrição do produto (regra em <code>src/lib/departamentos.js</code>). Cuidado com a pegadinha: a marca "FRUTA POLPA" está dentro da descrição de todo produto, então a palavra "polpa" não separa nada — o que identifica o Morango Congelado é a palavra <b>congelado</b>. Produto classificado errado se corrige pelo código em <code>DEPARTAMENTO_POR_CODIGO</code>.
+      </p>
+
+      <MixEvolucao T={T} dados1464={dados1464} />
     </div>
   );
 }

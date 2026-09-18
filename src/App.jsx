@@ -21,9 +21,33 @@ import {
   persistenceEnabled, signIn, signOut, getSessaoEPerfil, onAuthChange,
   importarLoteEGravarLinha, carregarHistoricoDre,
 } from "./lib/supabaseClient.js";
-import { MESES, MESES_LABEL, OFICIAL, montarDreDoMes, calcularCargaTributaria, detectarAnomaliasTodasLinhas, REF } from "./lib/dreReference.js";
+import { MESES, MESES_LABEL, OFICIAL, montarDreDoMes, calcularCargaTributaria, detectarAnomaliasTodasLinhas, REF, localizarLinha } from "./lib/dreReference.js";
 import { fechamentosNoMes } from "./lib/fechamentos.js";
 import { DRE_NODES } from "./lib/dreNodes.js";
+
+// ═══════════════════════════════════════════════════════════════════
+// LINHAS RESOLVIDAS POR RÓTULO — não por número fixo. A planilha-mestra
+// já reestruturou uma vez (conta "TARIFA" empurrou tudo); resolver pelo
+// nome, uma vez ao carregar, evita que a árvore mostre override na
+// linha errada na próxima vez que a contabilidade reordenar algo.
+// ═══════════════════════════════════════════════════════════════════
+const ROW = {
+  receitaLiquida: localizarLinha(DRE_NODES, { labelExato: "(=) RECEITA LIQUIDA" }),
+  lucroBruto: localizarLinha(DRE_NODES, { labelExato: "(=) LUCRO BRUTO" }),
+  despesasOperacionais: localizarLinha(DRE_NODES, { labelExato: "(-) DESPESAS OPERACIONAIS" }),
+  descontosConcedidos: localizarLinha(DRE_NODES, { labelExato: "DESCONTOS CONCEDIDOS", nivel: 2 }),
+  lucroOperacionalContabil: localizarLinha(DRE_NODES, { labelExato: "(=) LUCRO OPERACIONAL" }),
+  resultadoAntesCsll: localizarLinha(DRE_NODES, { contem: "RESULTADO DO EXERCICIO ANTES DA CSLL" }),
+  resultadoLiquido: localizarLinha(DRE_NODES, { contem: "RESULTADO LIQUIDO DO EXERCICIO" }),
+  lucroOperacionalContabilGer: localizarLinha(DRE_NODES, { contem: "LUCRO OPERACIONAL DA CONTÁBIL" }),
+  lucratividadeContabil: localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE CONTÁBIL" }),
+  grupo222Gerencial: localizarLinha(DRE_NODES, { contem: "GRUPO 222" }),
+  grupo750Gerencial: localizarLinha(DRE_NODES, { contem: "GRUPO 750" }),
+  lucroOperacionalGerencial: localizarLinha(DRE_NODES, { labelExato: "LUCRO OPERACIONAL GERENCIAL" }),
+  lucratividadeGerencial: localizarLinha(DRE_NODES, { labelExato: "LUCRATIVIDADE GERENCIAL" }),
+  lucroComSubvencoes: localizarLinha(DRE_NODES, { labelExato: "LUCRO COM SUBVENÇÕES" }),
+  lucratividadeComSubvencoes: localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" }),
+};
 
 const TABS = [
   { id: "import", label: "Importar", icon: "📥" },
@@ -265,7 +289,19 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   }, [gravar]);
 
-  const [dadosTrimestral, setDadosTrimestral] = useState({});
+  // "Comparativo 2025 x 2026" também vive no historico compartilhado
+  // agora — o mesmo bug que o Faturamento por Cliente tinha (dados só
+  // na memória da aba, sumindo ao recarregar) valia pra este import.
+  const dadosTrimestral = useMemo(() => {
+    const registros = historico["2122-comparativo"] || {};
+    const saida = {};
+    for (const mes of Object.keys(registros)) {
+      const extra = registros[mes]?.extra;
+      if (extra) saida[mes] = extra;
+    }
+    return saida;
+  }, [historico]);
+
   const handleFileTrimestral = useCallback((e) => {
     const file = e.target.files[0]; if (!file) return;
     setLoading("trimestral");
@@ -277,7 +313,10 @@ export default function App() {
           alert("Não reconheci nenhuma aba com nome de mês (JAN, FEV, MAR...) neste arquivo.");
         } else {
           const resultado = parseAnaliseTrimestral(wb, XLSX.utils, 2026);
-          setDadosTrimestral((prev) => ({ ...prev, ...resultado, __arquivo: file.name }));
+          for (const mes of Object.keys(resultado)) {
+            gravar("2122-comparativo", mes, file.name, 0, resultado[mes]);
+          }
+          if (Object.keys(resultado).length === 0) alert("Não encontrei nenhum mês reconhecível nas abas deste arquivo.");
         }
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("trimestral"); e.target.value = "";
@@ -302,13 +341,13 @@ export default function App() {
       dreAcc.push({ ...d, linha138Live: Boolean(h138), linha209Live: Boolean(h209), linha211Live: Boolean(h211a || h211b), linha211Parcial: Boolean(h211a) !== Boolean(h211b) });
 
       overridesAcc[mes] = {
-        13: d.receitaLiquida, 58: d.lucroBruto, 61: d.despesasOperacionais,
-        138: d.linha138, 179: d.lucroOperacionalContabil, 191: d.resultadoAntesCsll,
-        198: d.resultadoLiquido, 203: d.lucroOperacionalContabil, 204: d.lucratividadeContabil / 100,
-        209: d.linha209, 211: d.linha211, 213: d.lucroOperacionalGerencial,
-        214: d.lucratividadeGerencial / 100, 218: d.lucroComSubvencoes, 219: d.lucratividadeComSubvencoes / 100,
+        [ROW.receitaLiquida]: d.receitaLiquida, [ROW.lucroBruto]: d.lucroBruto, [ROW.despesasOperacionais]: d.despesasOperacionais,
+        [ROW.descontosConcedidos]: d.linha138, [ROW.lucroOperacionalContabil]: d.lucroOperacionalContabil, [ROW.resultadoAntesCsll]: d.resultadoAntesCsll,
+        [ROW.resultadoLiquido]: d.resultadoLiquido, [ROW.lucroOperacionalContabilGer]: d.lucroOperacionalContabil, [ROW.lucratividadeContabil]: d.lucratividadeContabil / 100,
+        [ROW.grupo222Gerencial]: d.linha209, [ROW.grupo750Gerencial]: d.linha211, [ROW.lucroOperacionalGerencial]: d.lucroOperacionalGerencial,
+        [ROW.lucratividadeGerencial]: d.lucratividadeGerencial / 100, [ROW.lucroComSubvencoes]: d.lucroComSubvencoes, [ROW.lucratividadeComSubvencoes]: d.lucratividadeComSubvencoes / 100,
       };
-      flagsAcc[mes] = { 138: Boolean(h138), 209: Boolean(h209), 211: Boolean(h211a || h211b) };
+      flagsAcc[mes] = { [ROW.descontosConcedidos]: Boolean(h138), [ROW.grupo222Gerencial]: Boolean(h209), [ROW.grupo750Gerencial]: Boolean(h211a || h211b) };
     });
     return { dre: dreAcc, overrides: overridesAcc, importedFlags: flagsAcc };
   }, [historico, regime]);
@@ -419,7 +458,7 @@ export default function App() {
               handleFileTermo1={handleFileLote("124-750", parseGrupo750Termo1Lote)}
               handleFileTermo2={handleFileLote("750-caixa10", parseGrupo750Termo2Lote)}
               handleFileProdutos1464={handleFileProdutos1464}
-              handleFileTrimestral={handleFileTrimestral} mesesTrimestral={Object.keys(dadosTrimestral).filter((k) => k !== "__arquivo")}
+              handleFileTrimestral={handleFileTrimestral} mesesTrimestral={Object.keys(dadosTrimestral)}
               handleFileClientes={handleFileClientes} mesesClientes={Object.keys(dadosClientes)} />
           ) : (
             <div style={{ textAlign: "center", padding: "60px 0", color: T.textMuted }}>

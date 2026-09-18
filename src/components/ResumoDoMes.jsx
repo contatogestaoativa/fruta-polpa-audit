@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { DRE_NODES } from "../lib/dreNodes.js";
-import { calcularResumoDoMes, montarPayloadIA, MAX_JANELA } from "../lib/resumoMensal.js";
+import { calcularResumoDoMes, montarPayloadIA, MAX_JANELA, ROW_FATURAMENTO_GERENCIAL } from "../lib/resumoMensal.js";
 import { persistenceEnabled, salvarResumoMensal, listarResumosMensais, carregarResumoMensal } from "../lib/supabaseClient.js";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -367,7 +367,7 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
             {secoes.map((sec) => (
               <SecaoResumo key={sec.header.row} T={T} sec={sec} porRow={resumo.porRow}
                 isExpanded={expandidas.has(sec.header.row)} toggle={toggle}
-                inserirTituloGerencialAntes={sec.header.row === 201} />
+                inserirTituloGerencialAntes={sec.header.row === ROW_FATURAMENTO_GERENCIAL} />
             ))}
           </tbody>
         </table>

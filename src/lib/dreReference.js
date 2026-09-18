@@ -50,7 +50,13 @@ export const REF = {
 // vivo (2107 / 750-222 / 124-750+caixa10) — sem import, valem 0 (ver
 // função `valorOficialOuZero`), nunca undefined/NaN.
 export const OFICIAL = {
-  "138": { "2026-01": -10255.51, "2026-02": -84033.5, "2026-03": -199149.04, "2026-04": -202620.51, "2026-05": -174959.33, "2026-06": -657096.5, "2026-07": -385773.39 },
+  // Jan-Jul: valor já auditado manualmente (regime de competência).
+  // Agosto (138): ainda não tem auditoria manual nem import ao vivo —
+  // usa o valor BRUTO que já está na planilha-mestra (regime de caixa,
+  // sem a reversão de competência) só pra não abrir um buraco na
+  // despesa enquanto ninguém importa o 2107 de Agosto. O import ao
+  // vivo, quando vier, substitui isso pelo valor correto.
+  "138": { "2026-01": -10255.51, "2026-02": -84033.5, "2026-03": -199149.04, "2026-04": -202620.51, "2026-05": -174959.33, "2026-06": -657096.5, "2026-07": -385773.39, "2026-08": -913510.27 },
   "209": { "2026-01": 45245.33, "2026-02": 189013.75, "2026-03": 60284.59, "2026-04": 177610.65, "2026-05": 69295.56, "2026-06": 74273.3, "2026-07": 1141852.26 },
   "211": { "2026-01": 256600.1, "2026-02": 261185.82, "2026-03": 279984.39, "2026-04": 314185.9, "2026-05": 313406.26, "2026-06": 354644.82, "2026-07": 415595.63 },
 };

@@ -42,6 +42,17 @@ export const REF = {
   nfBaixaBacuri: { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 0, "2026-06": 0, "2026-07": 0, "2026-08": 0 },
   // "NF Posto" foi renomeado para "Notas Técnicas" pela contabilidade em Agosto — mesmo conceito, mesmo tratamento.
   nfPosto: { "2026-01": 238300.64, "2026-02": 222731.45, "2026-03": 502353.24, "2026-04": 10441.52, "2026-05": 292894.06, "2026-06": 443041.87, "2026-07": 313540.55, "2026-08": 489669.06 },
+  // 3 linhas novas do bloco gerencial (confirmado na fórmula real da
+  // planilha-mestra, linha 217: soma D208+D209+D210 junto com os
+  // demais ajustes). Reatribuem a linha 138, no nível gerencial, de
+  // volta pro regime de competência — necessário porque, desde a
+  // decisão de 18/09, o bloco CONTÁBIL passou a usar caixa/bruto puro
+  // (pra bater com a linha 199), então essa correção só pode entrar
+  // aqui, no gerencial. Os 3 valores já vêm com o sinal certo — somam
+  // direto, sem inverter nada (igual aos demais ajustes desta lista).
+  descontosConcedidos2025: { "2026-01": 263125.49, "2026-02": 203347.5, "2026-03": 25679.96, "2026-04": 6815.49, "2026-05": 894981.67, "2026-06": 85142.5, "2026-07": 93180.61, "2026-08": 0 },
+  descontosConcedidos2026: { "2026-01": 0, "2026-02": 70268.74, "2026-03": 173602.86, "2026-04": 202584.31, "2026-05": 158990.86, "2026-06": 654669.59, "2026-07": 385773.8, "2026-08": 591361.61 },
+  descontosConcedidosPorComp: { "2026-01": -563700.53, "2026-02": -348711.08, "2026-03": -213988.62, "2026-04": -302994.55, "2026-05": -186143.44, "2026-06": -30351.94, "2026-07": 0, "2026-08": 0 },
   faturamentoGerencial: { "2026-01": 7608270.97, "2026-02": 6916992.49, "2026-03": 6844337.6, "2026-04": 8418031.28, "2026-05": 7743298.09, "2026-06": 7608805.05, "2026-07": 9493705.12, "2026-08": 8824364.91 },
 };
 
@@ -50,15 +61,18 @@ export const REF = {
 // vivo (2107 / 750-222 / 124-750+caixa10) — sem import, valem 0 (ver
 // função `valorOficialOuZero`), nunca undefined/NaN.
 export const OFICIAL = {
-  // Jan-Jul: valor já auditado manualmente (regime de competência).
-  // Agosto (138): ainda não tem auditoria manual nem import ao vivo —
-  // usa o valor BRUTO que já está na planilha-mestra (regime de caixa,
-  // sem a reversão de competência) só pra não abrir um buraco na
-  // despesa enquanto ninguém importa o 2107 de Agosto. O import ao
-  // vivo, quando vier, substitui isso pelo valor correto.
-  "138": { "2026-01": -10255.51, "2026-02": -84033.5, "2026-03": -199149.04, "2026-04": -202620.51, "2026-05": -174959.33, "2026-06": -657096.5, "2026-07": -385773.39, "2026-08": -913510.27 },
-  "209": { "2026-01": 45245.33, "2026-02": 189013.75, "2026-03": 60284.59, "2026-04": 177610.65, "2026-05": 69295.56, "2026-06": 74273.3, "2026-07": 1141852.26 },
-  "211": { "2026-01": 256600.1, "2026-02": 261185.82, "2026-03": 279984.39, "2026-04": 314185.9, "2026-05": 313406.26, "2026-06": 354644.82, "2026-07": 415595.63 },
+  // Decisão confirmada com a contabilidade em 18/09: a referência da
+  // linha 138 (quando não há import ao vivo) usa o valor BRUTO/CAIXA
+  // — o mesmo que a planilha-mestra usa na linha 199 (Resultado
+  // Líquido do Exercício) — não o ajustado por competência. Isso faz
+  // o sistema bater exato com a linha 199 em todos os meses. O import
+  // ao vivo do 2107, quando feito, continua respeitando o toggle de
+  // regime (Competência / Competência Completa / Caixa) normalmente —
+  // essa mudança só afeta o valor de referência usado ANTES de haver
+  // import ao vivo.
+  "138": { "2026-01": -273381, "2026-02": -287380.58, "2026-03": -224828.93, "2026-04": -209435.8, "2026-05": -1069941.22, "2026-06": -742239.33, "2026-07": -478954.41, "2026-08": -913510.27 },
+  "209": { "2026-01": 45245.33, "2026-02": 189013.75, "2026-03": 60284.59, "2026-04": 177610.65, "2026-05": 69295.56, "2026-06": 74273.3, "2026-07": 1141852.26, "2026-08": 128378.09 },
+  "211": { "2026-01": 256600.1, "2026-02": 261185.82, "2026-03": 279984.39, "2026-04": 314185.9, "2026-05": 313406.26, "2026-06": 354644.82, "2026-07": 415595.63, "2026-08": 394536.71 },
 };
 
 function round2(n) { return Math.round(n * 100) / 100; }
@@ -91,13 +105,22 @@ export function montarDreDoMes(mes, { linha138, linha209, linha211 } = {}) {
   const resultadoLiquido = round2(resultadoAntesCsll + provisaoCsll);
 
   const depreciacao = REF.depreciacao[mes], easy = REF.easy[mes], nfBaixaBacuri = REF.nfBaixaBacuri[mes], nfPosto = REF.nfPosto[mes];
-  const ajustesGerenciais = round2(depreciacao + easy + nfBaixaBacuri + l209 + nfPosto - l211);
+  // As 3 linhas de "Descontos Concedidos" (2025/2026/por Comp) entram
+  // aqui — confirmado direto na fórmula real da planilha-mestra
+  // (célula D217: soma D208+D209+D210 junto com os demais ajustes).
+  const descontos2025 = REF.descontosConcedidos2025[mes] || 0;
+  const descontos2026 = REF.descontosConcedidos2026[mes] || 0;
+  const descontosPorComp = REF.descontosConcedidosPorComp[mes] || 0;
+  const ajustesGerenciais = round2(depreciacao + easy + nfBaixaBacuri + l209 + nfPosto - l211 + descontos2025 + descontos2026 + descontosPorComp);
   const lucroOperacionalGerencial = round2(lucroOperacionalContabil + ajustesGerenciais);
   const lucroComSubvencoes = round2(resultadoLiquido + ajustesGerenciais);
 
   const faturamentoGerencial = REF.faturamentoGerencial[mes];
   const lucratividadeContabil = faturamentoGerencial ? round2((lucroOperacionalContabil / faturamentoGerencial) * 10000) / 100 : null;
-  const lucratividadeGerencial = faturamentoGerencial ? round2((lucroOperacionalGerencial / faturamentoGerencial) * 10000) / 100 : null;
+  // Confirmado na fórmula real da planilha (célula D218: =D217/D4) —
+  // a Lucratividade GERENCIAL usa a RECEITA BRUTA como base, não o
+  // Faturamento Gerencial (diferente das outras duas lucratividades).
+  const lucratividadeGerencial = receitaBruta ? round2((lucroOperacionalGerencial / receitaBruta) * 10000) / 100 : null;
   const lucratividadeComSubvencoes = faturamentoGerencial ? round2((lucroComSubvencoes / faturamentoGerencial) * 10000) / 100 : null;
 
   return {

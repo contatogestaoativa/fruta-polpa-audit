@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment } from "react";
 import { DRE_NODES } from "../lib/dreNodes.js";
-import { getValorNode, REF } from "../lib/dreReference.js";
+import { getValorNode, REF, localizarLinha } from "../lib/dreReference.js";
 import { fechamentosNoMes, fechamentosNoPeriodo } from "../lib/fechamentos.js";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -16,13 +16,27 @@ import { fechamentosNoMes, fechamentosNoPeriodo } from "../lib/fechamentos.js";
 //   · Por fechamento    — soma ÷ nº de sextas-feiras (fechamentos)
 //
 // Análise vertical segue a mesma regra da aba DRE: bloco contábil
-// (linhas < 201) sobre a Receita dos Produtos Vendidos; bloco gerencial
-// (linhas >= 201) sobre o Faturamento Gerencial.
+// sobre a Receita dos Produtos Vendidos; bloco gerencial sobre o
+// Faturamento Gerencial. O limite entre os dois blocos e as linhas de
+// resultado são resolvidos por RÓTULO (ver dreReference.js), não por
+// número fixo — a planilha-mestra já reestruturou uma vez.
 // ═══════════════════════════════════════════════════════════════════
 
-const PCT_ROWS = new Set([204, 214, 219]);
-const PCT_PARA_LINHA_MONEY = { 204: 203, 214: 213, 219: 218 };
-const LINHAS_RESULTADO = [201, 213, 214, 218, 219, 204]; // cards do topo
+const ROW_LUCRATIVIDADE_CONTABIL = localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE CONTÁBIL" });
+const ROW_LUCRATIVIDADE_GERENCIAL = localizarLinha(DRE_NODES, { labelExato: "LUCRATIVIDADE GERENCIAL" });
+const ROW_LUCRATIVIDADE_SUBVENCOES = localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" });
+const ROW_LUCRO_OP_CONTABIL_GER = localizarLinha(DRE_NODES, { contem: "LUCRO OPERACIONAL DA CONTÁBIL" });
+const ROW_LUCRO_OP_GERENCIAL = localizarLinha(DRE_NODES, { labelExato: "LUCRO OPERACIONAL GERENCIAL" });
+const ROW_LUCRO_COM_SUBVENCOES = localizarLinha(DRE_NODES, { labelExato: "LUCRO COM SUBVENÇÕES" });
+const ROW_FATURAMENTO_GERENCIAL = localizarLinha(DRE_NODES, { contem: "FATURAMENTO GERENCIAL" });
+
+const PCT_ROWS = new Set([ROW_LUCRATIVIDADE_CONTABIL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRATIVIDADE_SUBVENCOES]);
+const PCT_PARA_LINHA_MONEY = {
+  [ROW_LUCRATIVIDADE_CONTABIL]: ROW_LUCRO_OP_CONTABIL_GER,
+  [ROW_LUCRATIVIDADE_GERENCIAL]: ROW_LUCRO_OP_GERENCIAL,
+  [ROW_LUCRATIVIDADE_SUBVENCOES]: ROW_LUCRO_COM_SUBVENCOES,
+};
+const LINHAS_RESULTADO = [ROW_FATURAMENTO_GERENCIAL, ROW_LUCRO_OP_GERENCIAL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRO_COM_SUBVENCOES, ROW_LUCRATIVIDADE_SUBVENCOES, ROW_LUCRATIVIDADE_CONTABIL]; // cards do topo
 
 function fmtMoeda(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -128,7 +142,7 @@ export default function ComparativoPeriodos({ T, meses, mesesLabel, overrides })
   // análise vertical — não muda com a base (é razão dentro do mesmo período)
   function pctVertical(node, lista) {
     if (PCT_ROWS.has(node.row) || !lista.length) return null;
-    const baseVertical = node.row < 201
+    const baseVertical = node.row < ROW_FATURAMENTO_GERENCIAL
       ? lista.reduce((s, m) => s + (REF.receitaBruta[m] || 0), 0)
       : lista.reduce((s, m) => s + (REF.faturamentoGerencial[m] || 0), 0);
     if (!baseVertical) return null;
@@ -291,7 +305,7 @@ export default function ComparativoPeriodos({ T, meses, mesesLabel, overrides })
               <SecaoComparada key={sec.header.row} T={T} sec={sec}
                 isExpanded={expandidas.has(sec.header.row)} toggle={toggle}
                 linhaComparada={linhaComparada}
-                inserirTituloGerencialAntes={sec.header.row === 201} />
+                inserirTituloGerencialAntes={sec.header.row === ROW_FATURAMENTO_GERENCIAL} />
             ))}
           </tbody>
         </table>

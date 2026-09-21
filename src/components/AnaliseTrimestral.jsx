@@ -1,17 +1,17 @@
 import { useState, useMemo, Fragment } from "react";
 import { DRE_NODES } from "../lib/dreNodes.js";
 import { mapaValores2025 } from "../lib/dre2025Reference.js";
-import { getValorNode, MESES } from "../lib/dreReference.js";
+import { getValorNode, MESES, MESES_LABEL } from "../lib/dreReference.js";
 
 // Meses vêm da mesma lista usada no resto do sistema — quando um mês
 // novo entrar (ex: Agosto), aparece aqui automaticamente. A coluna
 // "2025" fica em branco pros meses sem comparativo cadastrado ainda
 // (ver dre2025Reference.js — MES_2026_PARA_2025 só cobre Jan-Jul).
 const MESES_2026 = MESES;
-const MESES_LABEL = { "2026-01": "Jan", "2026-02": "Fev", "2026-03": "Mar", "2026-04": "Abr", "2026-05": "Mai", "2026-06": "Jun", "2026-07": "Jul" };
 const TRIMESTRES = [
   { label: "1º Trimestre", meses: ["2026-01", "2026-02", "2026-03"] },
   { label: "2º Trimestre", meses: ["2026-04", "2026-05", "2026-06"] },
+  { label: "3º Trimestre", meses: ["2026-07", "2026-08", "2026-09"] },
 ];
 
 function fmtMoeda(n) {

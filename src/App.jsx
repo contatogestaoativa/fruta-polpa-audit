@@ -200,9 +200,16 @@ export default function App() {
       reader.onload = (ev) => {
         try {
           const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
-          const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-          const mes = detectarMesPredominante(rows);
-          gravar("750-222", mes, file.name, parseGrupo222(rows).total);
+          // Um arquivo pode trazer mais de um mês, uma aba por mês (ex:
+          // "07 2026 - GRUPO 222" + "08 2026 - GRUPO 222" no mesmo
+          // upload) — processa TODAS as abas, não só a primeira.
+          wb.SheetNames.forEach((nomeAba) => {
+            const rows = XLSX.utils.sheet_to_json(wb.Sheets[nomeAba]);
+            if (!rows.length) return;
+            const mes = detectarMesPredominante(rows);
+            if (!mes) return;
+            gravar("750-222", mes, `${file.name} (${nomeAba})`, parseGrupo222(rows).total);
+          });
         } catch (err) { alert(`Erro em "${file.name}": ` + err.message); }
         pendentes -= 1;
         if (pendentes === 0) { setLoading(null); setActiveTab("dre"); }

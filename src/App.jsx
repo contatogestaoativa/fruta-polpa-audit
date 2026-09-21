@@ -496,7 +496,7 @@ export default function App() {
         )}
         {activeTab === "comparativo" && <ComparativoPeriodos T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
         {activeTab === "resumo" && <ResumoDoMes T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
-        {activeTab === "reconciliacao" && (hasData ? <ReconciliacaoTab T={T} historico={historico} regime={regime} /> : <EmptyState T={T} onGoImport={() => setActiveTab("import")} />)}
+        {activeTab === "reconciliacao" && (hasData ? <ReconciliacaoTab T={T} historico={historico} /> : <EmptyState T={T} onGoImport={() => setActiveTab("import")} />)}
         {activeTab === "anomalias" && <AnomaliasTab T={T} limiarPct={limiarPct} setLimiarPct={setLimiarPct} overrides={overrides} />}
         {activeTab === "impostos" && <ImpostosTab T={T} overrides={overrides} />}
         {activeTab === "produtos" && <ProdutosTab T={T} historico={historico} overrides={overrides} />}
@@ -605,12 +605,13 @@ function botaoStyle(T, destaque) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-function ReconciliacaoTab({ T, historico, regime }) {
+function ReconciliacaoTab({ T, historico }) {
   return (
     <div>
-      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Reconciliação Jan-Jul/2026</h1>
+      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Reconciliação {MESES_LABEL[MESES[0]]}-{MESES_LABEL[MESES[MESES.length - 1]]}/2026</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 22, maxWidth: 680 }}>Cada valor importado é comparado ao número já validado na auditoria manual (13-20/08/2026).</p>
-      <ReconciliacaoSecao T={T} titulo="Linha 138 — Descontos Concedidos" hist={historico["2107"]} getValor={(h) => valorLinha138(h, regime)} oficial={OFICIAL["138"]} soComparaCompetencia={regime === "competencia"} />
+      <ReconciliacaoSecao T={T} titulo="Linha 138 — Descontos Concedidos" hist={historico["2107"]} getValor={(h) => h.extra?.saldoCaixa} oficial={OFICIAL["138"]} soComparaCompetencia
+        notaRegime="Comparado sempre em regime de caixa (bruto), porque a referência oficial desta linha passou a usar essa base em 18/09 — ver decisão registrada em dreReference.js." />
       <ReconciliacaoSecao T={T} titulo="Linha 209 — Despesas Grupo 222" hist={historico["750-222"]} getValor={(h) => h.valor} oficial={OFICIAL["209"]} soComparaCompetencia />
       <ReconciliacaoSecao T={T} titulo="Linha 211 — Grupo 750 (termo 1 + termo 2)" hist={combinarTermos(historico["124-750"], historico["750-caixa10"])} getValor={(h) => h.valor} oficial={OFICIAL["211"]} soComparaCompetencia />
     </div>
@@ -627,11 +628,12 @@ function combinarTermos(t1, t2) {
   });
   return out;
 }
-function ReconciliacaoSecao({ T, titulo, hist, getValor, oficial, soComparaCompetencia }) {
+function ReconciliacaoSecao({ T, titulo, hist, getValor, oficial, soComparaCompetencia, notaRegime }) {
   if (!hist || Object.keys(hist).length === 0) return <div style={{ marginBottom: 22 }}><h2 style={{ fontFamily: T.fontDisplay, fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{titulo}</h2><div style={{ color: T.textMuted, fontSize: 12 }}>Ainda não importado.</div></div>;
   return (
     <div style={{ marginBottom: 28 }}>
-      <h2 style={{ fontFamily: T.fontDisplay, fontSize: 16, fontWeight: 700, marginBottom: 10 }}>{titulo}</h2>
+      <h2 style={{ fontFamily: T.fontDisplay, fontSize: 16, fontWeight: 700, marginBottom: notaRegime ? 4 : 10 }}>{titulo}</h2>
+      {notaRegime && <p style={{ color: T.textMuted, fontSize: 11, marginBottom: 10, maxWidth: 680 }}>{notaRegime}</p>}
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead><tr>{["Mês", "Importado", "Oficial", "Status", "Arquivo"].map((h) => <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: T.textMuted, fontWeight: 700, fontSize: 10, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>

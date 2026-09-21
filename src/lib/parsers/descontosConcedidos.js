@@ -10,7 +10,21 @@
 //   - linhas #N/A na 1008 (título não encontrado) SOMAM no "exercício
 //     anterior" também, pois foi o tratamento observado nos dados reais
 //   - saldo do mês = valor do mês + reversão de exercício anterior
+//
+// RESILIÊNCIA (18/09) — o Winthor já exportou esse relatório com a
+// coluna da data do título original batizada só de "DATA" de novo (em
+// vez de "DATA 1008") — como já existe uma coluna "DATA" antes dela
+// (a de baixa), o Excel/JS renomeia a segunda sozinho para "DATA_1" ao
+// virar objeto. Sem esse fallback, TODO o cruzamento silenciosamente
+// vira "não encontrado" (saldoCompetencia zera em todos os meses do
+// arquivo, não só no mês novo). `pegarData1008` cobre os nomes já
+// vistos na prática; se o Winthor renomear de novo, é só acrescentar
+// aqui.
 // ═══════════════════════════════════════════════════════════════════
+
+function pegarData1008(row) {
+  return row["DATA 1008"] ?? row["DATA_1"] ?? row["DATA 1"] ?? null;
+}
 
 /**
  * @param {Array<{NOTA:number, DATA:Date, HISTORICO:string, VALOR:number, 'DATA 1008':Date|string|null, CLIENTE:string}>} rows
@@ -24,7 +38,7 @@ export function parseDescontosConcedidos(rows) {
     if (!data) continue;
     const mesKey = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
     const valor = Number(row.VALOR) || 0;
-    const data1008 = toDate(row["DATA 1008"]);
+    const data1008 = toDate(pegarData1008(row));
 
     if (!porMes[mesKey]) {
       porMes[mesKey] = { mes: mesKey, valorTotal: 0, reversaoExercicioAnterior: 0, linhasNaoEncontradas: 0 };
@@ -93,7 +107,7 @@ export function parseDescontosConcedidosCompetenciaPura(rows) {
   const porMesCompetencia = {};
   for (const row of rows) {
     const data = toDate(row.DATA);
-    const data1008 = toDate(row["DATA 1008"]);
+    const data1008 = toDate(pegarData1008(row));
     if (!data || !data1008) continue; // sem 1008 = não dá pra saber a competência real, fica de fora (mesmo critério validado)
     const valor = Number(row.VALOR) || 0;
     const mesComp = `${data1008.getFullYear()}-${String(data1008.getMonth() + 1).padStart(2, "0")}`;

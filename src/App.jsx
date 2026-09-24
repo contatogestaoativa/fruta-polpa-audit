@@ -483,7 +483,7 @@ export default function App() {
         {activeTab === "dre" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
-              <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700 }}>DRE — Jan a Jul/2026</h1>
+              <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700 }}>DRE — {MESES_LABEL[MESES[0]]} a {MESES_LABEL[MESES[MESES.length - 1]]}/2026</h1>
               <div style={{ display: "flex", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2 }}>
                 {[["ambos", "Ambos"], ["contabil", "Só Contábil"], ["gerencial", "Só Gerencial"]].map(([v, label]) => (
                   <button key={v} onClick={() => setBlocoVisivel(v)} style={{ border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", background: blocoVisivel === v ? T.primary : "transparent", color: blocoVisivel === v ? "#fff" : T.textSub }}>

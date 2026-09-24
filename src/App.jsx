@@ -248,12 +248,18 @@ export default function App() {
     reader.onload = (ev) => {
       try {
         const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { range: 3 });
-        const resultado = parseProdutos1464(rows, 2026);
+        // Formato nativo do Winthor: uma aba por mês, sem cabeçalho —
+        // lê cru (header:1) e passa todas as abas de uma vez, pra o
+        // parser detectar sozinho onde estão as colunas em cada uma.
+        const porAba = {};
+        wb.SheetNames.forEach((nomeAba) => {
+          porAba[nomeAba] = XLSX.utils.sheet_to_json(wb.Sheets[nomeAba], { header: 1 });
+        });
+        const resultado = parseProdutos1464(porAba, 2026);
         Object.entries(resultado).forEach(([mes, dados]) => {
           gravar("1464-produtos", mes, file.name, dados.totalFaturamento, dados);
         });
-        if (Object.keys(resultado).length === 0) alert("Não encontrei nenhum mês reconhecível neste arquivo. Confirme se é o relatório 1464 (Faturamento por Produto) no formato esperado.");
+        if (Object.keys(resultado).length === 0) alert("Não encontrei nenhuma aba com nome de mês (janeiro, fevereiro...) neste arquivo, ou não consegui localizar as colunas de quantidade/faturamento nele.");
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("produtos"); e.target.value = "";
     };

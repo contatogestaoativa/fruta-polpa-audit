@@ -21,33 +21,37 @@ import {
   persistenceEnabled, signIn, signOut, getSessaoEPerfil, onAuthChange,
   importarLoteEGravarLinha, carregarHistoricoDre,
 } from "./lib/supabaseClient.js";
-import { MESES, MESES_LABEL, OFICIAL, montarDreDoMes, calcularCargaTributaria, detectarAnomaliasTodasLinhas, REF, localizarLinha } from "./lib/dreReference.js";
+import {
+  MESES_LABEL, OFICIAL_SEED, REF_SEED, montarDreDoMes, calcularCargaTributaria, detectarAnomaliasTodasLinhas,
+  localizarLinha, construirDreNodesEfetivo, construirMesesEfetivo, DRE_NODES_SEED,
+} from "./lib/dreReference.js";
 import { fechamentosNoMes } from "./lib/fechamentos.js";
-import { DRE_NODES } from "./lib/dreNodes.js";
 
 // ═══════════════════════════════════════════════════════════════════
-// LINHAS RESOLVIDAS POR RÓTULO — não por número fixo. A planilha-mestra
-// já reestruturou uma vez (conta "TARIFA" empurrou tudo); resolver pelo
-// nome, uma vez ao carregar, evita que a árvore mostre override na
-// linha errada na próxima vez que a contabilidade reordenar algo.
+// LINHAS RESOLVIDAS POR RÓTULO — não por número fixo nem por import
+// estático: a DRE agora é montada em tempo real (seed + dado ao vivo
+// do Supabase, ver dreReference.js), então esses "ROW" são recalculados
+// a cada vez que o dado efetivo mudar (useMemo abaixo, dentro do App).
 // ═══════════════════════════════════════════════════════════════════
-const ROW = {
-  receitaLiquida: localizarLinha(DRE_NODES, { labelExato: "(=) RECEITA LIQUIDA" }),
-  lucroBruto: localizarLinha(DRE_NODES, { labelExato: "(=) LUCRO BRUTO" }),
-  despesasOperacionais: localizarLinha(DRE_NODES, { labelExato: "(-) DESPESAS OPERACIONAIS" }),
-  descontosConcedidos: localizarLinha(DRE_NODES, { labelExato: "DESCONTOS CONCEDIDOS", nivel: 2 }),
-  lucroOperacionalContabil: localizarLinha(DRE_NODES, { labelExato: "(=) LUCRO OPERACIONAL" }),
-  resultadoAntesCsll: localizarLinha(DRE_NODES, { contem: "RESULTADO DO EXERCICIO ANTES DA CSLL" }),
-  resultadoLiquido: localizarLinha(DRE_NODES, { contem: "RESULTADO LIQUIDO DO EXERCICIO" }),
-  lucroOperacionalContabilGer: localizarLinha(DRE_NODES, { contem: "LUCRO OPERACIONAL DA CONTÁBIL" }),
-  lucratividadeContabil: localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE CONTÁBIL" }),
-  grupo222Gerencial: localizarLinha(DRE_NODES, { contem: "GRUPO 222" }),
-  grupo750Gerencial: localizarLinha(DRE_NODES, { contem: "GRUPO 750" }),
-  lucroOperacionalGerencial: localizarLinha(DRE_NODES, { labelExato: "LUCRO OPERACIONAL GERENCIAL" }),
-  lucratividadeGerencial: localizarLinha(DRE_NODES, { labelExato: "LUCRATIVIDADE GERENCIAL" }),
-  lucroComSubvencoes: localizarLinha(DRE_NODES, { labelExato: "LUCRO COM SUBVENÇÕES" }),
-  lucratividadeComSubvencoes: localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" }),
-};
+function resolverRows(dreNodes) {
+  return {
+    receitaLiquida: localizarLinha(dreNodes, { labelExato: "(=) RECEITA LIQUIDA" }),
+    lucroBruto: localizarLinha(dreNodes, { labelExato: "(=) LUCRO BRUTO" }),
+    despesasOperacionais: localizarLinha(dreNodes, { labelExato: "(-) DESPESAS OPERACIONAIS" }),
+    descontosConcedidos: localizarLinha(dreNodes, { labelExato: "DESCONTOS CONCEDIDOS", nivel: 2 }),
+    lucroOperacionalContabil: localizarLinha(dreNodes, { labelExato: "(=) LUCRO OPERACIONAL" }),
+    resultadoAntesCsll: localizarLinha(dreNodes, { contem: "RESULTADO DO EXERCICIO ANTES DA CSLL" }),
+    resultadoLiquido: localizarLinha(dreNodes, { contem: "RESULTADO LIQUIDO DO EXERCICIO" }),
+    lucroOperacionalContabilGer: localizarLinha(dreNodes, { contem: "LUCRO OPERACIONAL DA CONTÁBIL" }),
+    lucratividadeContabil: localizarLinha(dreNodes, { contem: "LUCRATIVIDADE CONTÁBIL" }),
+    grupo222Gerencial: localizarLinha(dreNodes, { contem: "GRUPO 222" }),
+    grupo750Gerencial: localizarLinha(dreNodes, { contem: "GRUPO 750" }),
+    lucroOperacionalGerencial: localizarLinha(dreNodes, { labelExato: "LUCRO OPERACIONAL GERENCIAL" }),
+    lucratividadeGerencial: localizarLinha(dreNodes, { labelExato: "LUCRATIVIDADE GERENCIAL" }),
+    lucroComSubvencoes: localizarLinha(dreNodes, { labelExato: "LUCRO COM SUBVENÇÕES" }),
+    lucratividadeComSubvencoes: localizarLinha(dreNodes, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" }),
+  };
+}
 
 const TABS = [
   { id: "import", label: "Importar", icon: "📥" },
@@ -337,6 +341,19 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   }, []);
 
+  // ── Monta a DRE efetiva (seed + dado ao vivo do Supabase) ──
+  // historico["2122-dre-contabil"] já chega aqui de graça — o mesmo
+  // carregarHistoricoDre() que busca as outras rotinas também traz
+  // essa, já que a tabela é genérica (ver supabaseClient.js).
+  const dreNodes = useMemo(() => construirDreNodesEfetivo(historico["2122-dre-contabil"]), [historico]);
+  const MESES = useMemo(() => construirMesesEfetivo(historico["2122-dre-contabil"]), [historico]);
+  const ROW = useMemo(() => resolverRows(dreNodes), [dreNodes]);
+  // true enquanto nenhum mês tiver dado ao vivo do Supabase ainda — a
+  // numeração de linha é a mesma de sempre. Vira false assim que o
+  // primeiro mês com dado ao vivo entrar — ver nota em AnaliseTrimestral.jsx
+  // sobre por que isso desliga o comparativo com 2025 nesse caso.
+  const numeracaoLegada = dreNodes === DRE_NODES_SEED;
+
   // ── Recalcula a DRE completa por mês ──
   const { dre, overrides, importedFlags } = useMemo(() => {
     const overridesAcc = {}, flagsAcc = {}, dreAcc = [];
@@ -350,7 +367,7 @@ export default function App() {
       const linha209 = h209 ? h209.valor : undefined;
       const linha211 = (h211a || h211b) ? Math.round(((h211a?.valor || 0) + (h211b?.valor || 0)) * 100) / 100 : undefined;
 
-      const d = montarDreDoMes(mes, { linha138, linha209, linha211 });
+      const d = montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211 });
       dreAcc.push({ ...d, linha138Live: Boolean(h138), linha209Live: Boolean(h209), linha211Live: Boolean(h211a || h211b), linha211Parcial: Boolean(h211a) !== Boolean(h211b) });
 
       overridesAcc[mes] = {
@@ -363,7 +380,7 @@ export default function App() {
       flagsAcc[mes] = { [ROW.descontosConcedidos]: Boolean(h138), [ROW.grupo222Gerencial]: Boolean(h209), [ROW.grupo750Gerencial]: Boolean(h211a || h211b) };
     });
     return { dre: dreAcc, overrides: overridesAcc, importedFlags: flagsAcc };
-  }, [historico, regime]);
+  }, [historico, regime, dreNodes, MESES, ROW]);
 
   const hasData = Object.values(historico).some((h) => Object.keys(h).length > 0);
   const podeGerenciarImportacao = podeImportar(perfil);
@@ -497,17 +514,17 @@ export default function App() {
             </p>
             <p style={{ color: T.textMuted, fontSize: 11, marginBottom: 4 }}><span style={{ color: T.leaf }}>■</span> ao vivo (importado) &nbsp; <span style={{ color: T.textSub }}>■</span> referência &nbsp; <span style={{ color: T.gold }}>■</span> lucratividade (%)</p>
             <p style={{ color: T.textMuted, fontSize: 11, marginBottom: 16 }}>💬 = comentário original da contabilidade sobre aquela conta.</p>
-            <DreHierarquica T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} importedFlags={importedFlags} blocoVisivel={blocoVisivel} />
+            <DreHierarquica T={T} dreNodes={dreNodes} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} importedFlags={importedFlags} blocoVisivel={blocoVisivel} />
           </div>
         )}
-        {activeTab === "comparativo" && <ComparativoPeriodos T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
-        {activeTab === "resumo" && <ResumoDoMes T={T} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
+        {activeTab === "comparativo" && <ComparativoPeriodos T={T} dreNodes={dreNodes} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
+        {activeTab === "resumo" && <ResumoDoMes T={T} dreNodes={dreNodes} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
         {activeTab === "reconciliacao" && (hasData ? <ReconciliacaoTab T={T} historico={historico} /> : <EmptyState T={T} onGoImport={() => setActiveTab("import")} />)}
-        {activeTab === "anomalias" && <AnomaliasTab T={T} limiarPct={limiarPct} setLimiarPct={setLimiarPct} overrides={overrides} />}
-        {activeTab === "impostos" && <ImpostosTab T={T} overrides={overrides} />}
+        {activeTab === "anomalias" && <AnomaliasTab T={T} dreNodes={dreNodes} meses={MESES} limiarPct={limiarPct} setLimiarPct={setLimiarPct} overrides={overrides} />}
+        {activeTab === "impostos" && <ImpostosTab T={T} dreNodes={dreNodes} meses={MESES} overrides={overrides} />}
         {activeTab === "produtos" && <ProdutosTab T={T} historico={historico} overrides={overrides} />}
         {activeTab === "clientes" && <ClientesTab T={T} dadosClientes={dadosClientes} />}
-        {activeTab === "trimestral" && <AnaliseTrimestral T={T} overrides={overrides} dadosImportados={dadosTrimestral} />}
+        {activeTab === "trimestral" && <AnaliseTrimestral T={T} dreNodes={dreNodes} meses={MESES} numeracaoLegada={numeracaoLegada} overrides={overrides} dadosImportados={dadosTrimestral} />}
         {activeTab === "rastreabilidade" && <RastreabilidadeTab T={T} />}
       </ErrorBoundary>
       </div>
@@ -616,10 +633,10 @@ function ReconciliacaoTab({ T, historico }) {
     <div>
       <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Reconciliação {MESES_LABEL[MESES[0]]}-{MESES_LABEL[MESES[MESES.length - 1]]}/2026</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 22, maxWidth: 680 }}>Cada valor importado é comparado ao número já validado na auditoria manual (13-20/08/2026).</p>
-      <ReconciliacaoSecao T={T} titulo="Linha 138 — Descontos Concedidos" hist={historico["2107"]} getValor={(h) => h.extra?.saldoCaixa} oficial={OFICIAL["138"]} soComparaCompetencia
+      <ReconciliacaoSecao T={T} titulo="Linha 138 — Descontos Concedidos" hist={historico["2107"]} getValor={(h) => h.extra?.saldoCaixa} oficial={OFICIAL_SEED["138"]} soComparaCompetencia
         notaRegime="Comparado sempre em regime de caixa (bruto), porque a referência oficial desta linha passou a usar essa base em 18/09 — ver decisão registrada em dreReference.js." />
-      <ReconciliacaoSecao T={T} titulo="Linha 209 — Despesas Grupo 222" hist={historico["750-222"]} getValor={(h) => h.valor} oficial={OFICIAL["209"]} soComparaCompetencia />
-      <ReconciliacaoSecao T={T} titulo="Linha 211 — Grupo 750 (termo 1 + termo 2)" hist={combinarTermos(historico["124-750"], historico["750-caixa10"])} getValor={(h) => h.valor} oficial={OFICIAL["211"]} soComparaCompetencia />
+      <ReconciliacaoSecao T={T} titulo="Linha 209 — Despesas Grupo 222" hist={historico["750-222"]} getValor={(h) => h.valor} oficial={OFICIAL_SEED["209"]} soComparaCompetencia />
+      <ReconciliacaoSecao T={T} titulo="Linha 211 — Grupo 750 (termo 1 + termo 2)" hist={combinarTermos(historico["124-750"], historico["750-caixa10"])} getValor={(h) => h.valor} oficial={OFICIAL_SEED["211"]} soComparaCompetencia />
     </div>
   );
 }
@@ -667,7 +684,7 @@ function ReconciliacaoSecao({ T, titulo, hist, getValor, oficial, soComparaCompe
 }
 
 // ═══════════════════════════════════════════════════════════════════
-function AnomaliasTab({ T, limiarPct, setLimiarPct, overrides }) {
+function AnomaliasTab({ T, dreNodes, meses, limiarPct, setLimiarPct, overrides }) {
   const [mesFiltro, setMesFiltro] = useState("todos");
   const [valorMinimo, setValorMinimo] = useState(0);
   const [porFechamento, setPorFechamento] = useState(false);
@@ -675,8 +692,8 @@ function AnomaliasTab({ T, limiarPct, setLimiarPct, overrides }) {
   const [ordemDesc, setOrdemDesc] = useState(true);
 
   const todosAchados = useMemo(
-    () => detectarAnomaliasTodasLinhas(DRE_NODES, overrides, limiarPct, { porFechamento }),
-    [overrides, limiarPct, porFechamento]
+    () => detectarAnomaliasTodasLinhas(dreNodes, overrides, limiarPct, meses, { porFechamento }),
+    [dreNodes, overrides, limiarPct, meses, porFechamento]
   );
 
   const achados = useMemo(() => {
@@ -745,7 +762,7 @@ function AnomaliasTab({ T, limiarPct, setLimiarPct, overrides }) {
 
       {porFechamento && (
         <div style={{ fontSize: 11, color: T.gold, marginBottom: 10 }}>
-          ⚙ Valores divididos pelo nº de fechamentos (sextas-feiras) de cada mês — {MESES.map((m) => `${MESES_LABEL[m]} ${fechamentosNoMes(m)}`).join(" · ")}
+          ⚙ Valores divididos pelo nº de fechamentos (sextas-feiras) de cada mês — {meses.map((m) => `${MESES_LABEL[m]} ${fechamentosNoMes(m)}`).join(" · ")}
         </div>
       )}
 
@@ -807,8 +824,8 @@ function fmtDelta(n) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-function ImpostosTab({ T, overrides }) {
-  const linhas = useMemo(() => MESES.map((mes) => calcularCargaTributaria(mes, DRE_NODES, overrides)), [overrides]);
+function ImpostosTab({ T, dreNodes, meses, overrides }) {
+  const linhas = useMemo(() => meses.map((mes) => calcularCargaTributaria(mes, dreNodes, overrides)), [dreNodes, meses, overrides]);
   return (
     <div>
       <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Receita × Lucro × Impostos</h1>
@@ -819,7 +836,7 @@ function ImpostosTab({ T, overrides }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead><tr>
             <th style={{ textAlign: "left", padding: "8px 10px", color: T.textMuted, fontWeight: 700, fontSize: 10, borderBottom: `1px solid ${T.border}` }}></th>
-            {MESES.map((m) => <th key={m} style={{ textAlign: "right", padding: "8px 10px", color: T.textMuted, fontWeight: 700, fontSize: 10, borderBottom: `1px solid ${T.border}` }}>{MESES_LABEL[m]}</th>)}
+            {meses.map((m) => <th key={m} style={{ textAlign: "right", padding: "8px 10px", color: T.textMuted, fontWeight: 700, fontSize: 10, borderBottom: `1px solid ${T.border}` }}>{MESES_LABEL[m]}</th>)}
           </tr></thead>
           <tbody>
             <tr style={{ background: T.card }}>
@@ -887,7 +904,7 @@ function ProdutosTab({ T, historico, overrides }) {
       </div>
     );
   }
-  const fatGerencial = REF.faturamentoGerencial[mesSelecionado];
+  const fatGerencial = REF_SEED.faturamentoGerencial[mesSelecionado];
   const ticketMedio = calcularTicketMedio(fatGerencial, dadosMes.totalQuantidade);
   const lucratividadeGerencial = overrides?.[mesSelecionado]?.[214] != null ? overrides[mesSelecionado][214] * 100 : null;
   const lucratividadeContabil = overrides?.[mesSelecionado]?.[204] != null ? overrides[mesSelecionado][204] * 100 : null;

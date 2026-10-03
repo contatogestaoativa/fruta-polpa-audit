@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// RESUMO DE RESULTADO MENSAL (demanda Gerson, 01/09/2026)
+// RESUMO DE RESULTADO MENSAL (atualizado Ingrid, 03/10/2026)
 //
 // Compara o mês selecionado contra a DRE MÉDIA do ano e explica, conta
 // por conta, por que as linhas de resultado ficaram acima ou abaixo
@@ -23,31 +23,36 @@
 // acumulado da janela.
 // ═══════════════════════════════════════════════════════════════════
 
-import { getValorNode, REF, localizarLinha } from "./dreReference.js";
+import { getValorNode, REF_SEED, localizarLinha } from "./dreReference.js";
 import { fechamentosNoMes, fechamentosNoPeriodo } from "./fechamentos.js";
-import { DRE_NODES } from "./dreNodes.js";
 
-// Resolvidas por RÓTULO, não por número fixo — a planilha-mestra já
-// reestruturou uma vez (ver dreReference.js) e vai reestruturar de novo.
-const ROW_LUCRO_BRUTO = localizarLinha(DRE_NODES, { labelExato: "(=) LUCRO BRUTO" });
-const ROW_LUCRATIVIDADE_CONTABIL = localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE CONTÁBIL" });
-const ROW_LUCRATIVIDADE_GERENCIAL = localizarLinha(DRE_NODES, { labelExato: "LUCRATIVIDADE GERENCIAL" });
-const ROW_LUCRATIVIDADE_SUBVENCOES = localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" });
-const ROW_LUCRO_OP_CONTABIL_GER = localizarLinha(DRE_NODES, { contem: "LUCRO OPERACIONAL DA CONTÁBIL" });
-const ROW_LUCRO_OP_GERENCIAL = localizarLinha(DRE_NODES, { labelExato: "LUCRO OPERACIONAL GERENCIAL" });
-const ROW_LUCRO_COM_SUBVENCOES = localizarLinha(DRE_NODES, { labelExato: "LUCRO COM SUBVENÇÕES" });
-export const ROW_FATURAMENTO_GERENCIAL = localizarLinha(DRE_NODES, { contem: "FATURAMENTO GERENCIAL" });
-
-export const LINHAS_RESULTADO = [ROW_LUCRO_BRUTO, ROW_LUCRATIVIDADE_CONTABIL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRATIVIDADE_SUBVENCOES];
 export const MAX_JANELA = 12;
 
-const PCT_ROWS = new Set([ROW_LUCRATIVIDADE_CONTABIL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRATIVIDADE_SUBVENCOES]);
-// linha de % -> linha em R$ que a origina (p/ recalcular a média corretamente)
-const PCT_PARA_LINHA_MONEY = {
-  [ROW_LUCRATIVIDADE_CONTABIL]: ROW_LUCRO_OP_CONTABIL_GER,
-  [ROW_LUCRATIVIDADE_GERENCIAL]: ROW_LUCRO_OP_GERENCIAL,
-  [ROW_LUCRATIVIDADE_SUBVENCOES]: ROW_LUCRO_COM_SUBVENCOES,
-};
+// Resolvidas por RÓTULO, não por número fixo — e agora recalculadas a
+// cada chamada, já que `dreNodes` é montado dinamicamente (seed + dado
+// ao vivo) e os números de linha são sintéticos, não mais estáveis
+// entre uma montagem e outra. Antes isso era módulo-level; não pode
+// mais ser, porque dreNodes muda em tempo de execução.
+export function resolverRows(dreNodes) {
+  const ROW_LUCRO_BRUTO = localizarLinha(dreNodes, { labelExato: "(=) LUCRO BRUTO" });
+  const ROW_RECEITA_BRUTA = localizarLinha(dreNodes, { contem: "RECEITA DOS PRODUTOS VENDIDOS", nivel: 0 });
+  const ROW_LUCRATIVIDADE_CONTABIL = localizarLinha(dreNodes, { contem: "LUCRATIVIDADE CONTÁBIL" });
+  const ROW_LUCRATIVIDADE_GERENCIAL = localizarLinha(dreNodes, { labelExato: "LUCRATIVIDADE GERENCIAL" });
+  const ROW_LUCRATIVIDADE_SUBVENCOES = localizarLinha(dreNodes, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" });
+  const ROW_LUCRO_OP_CONTABIL_GER = localizarLinha(dreNodes, { contem: "LUCRO OPERACIONAL DA CONTÁBIL" });
+  const ROW_LUCRO_OP_GERENCIAL = localizarLinha(dreNodes, { labelExato: "LUCRO OPERACIONAL GERENCIAL" });
+  const ROW_LUCRO_COM_SUBVENCOES = localizarLinha(dreNodes, { labelExato: "LUCRO COM SUBVENÇÕES" });
+  const ROW_FATURAMENTO_GERENCIAL = localizarLinha(dreNodes, { contem: "FATURAMENTO GERENCIAL" });
+
+  const LINHAS_RESULTADO = [ROW_LUCRO_BRUTO, ROW_LUCRATIVIDADE_CONTABIL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRATIVIDADE_SUBVENCOES];
+  const PCT_ROWS = new Set([ROW_LUCRATIVIDADE_CONTABIL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRATIVIDADE_SUBVENCOES]);
+  const PCT_PARA_LINHA_MONEY = {
+    [ROW_LUCRATIVIDADE_CONTABIL]: ROW_LUCRO_OP_CONTABIL_GER,
+    [ROW_LUCRATIVIDADE_GERENCIAL]: ROW_LUCRO_OP_GERENCIAL,
+    [ROW_LUCRATIVIDADE_SUBVENCOES]: ROW_LUCRO_COM_SUBVENCOES,
+  };
+  return { ROW_LUCRO_BRUTO, ROW_RECEITA_BRUTA, ROW_FATURAMENTO_GERENCIAL, LINHAS_RESULTADO, PCT_ROWS, PCT_PARA_LINHA_MONEY };
+}
 
 function round2(n) { return Math.round(n * 100) / 100; }
 
@@ -78,11 +83,11 @@ function somaBruta(node, meses, overrides) {
  * Linha de % é recalculada (soma do lucro ÷ soma do faturamento);
  * linha em R$ é média aritmética simples.
  */
-export function mediaDaLinha(node, janela, overrides, porRow) {
+export function mediaDaLinha(node, janela, overrides, porRow, rows) {
   if (!janela.length) return null;
-  if (PCT_ROWS.has(node.row)) {
-    const moneyRow = porRow[PCT_PARA_LINHA_MONEY[node.row]];
-    const fat = janela.reduce((s, m) => s + (REF.faturamentoGerencial[m] || 0), 0);
+  if (rows.PCT_ROWS.has(node.row)) {
+    const moneyRow = porRow[rows.PCT_PARA_LINHA_MONEY[node.row]];
+    const fat = janela.reduce((s, m) => s + (REF_SEED.faturamentoGerencial[m] || 0), 0);
     if (!moneyRow || !fat) return null;
     return somaBruta(moneyRow, janela, overrides) / fat;
   }
@@ -102,7 +107,7 @@ export function mediaDaLinha(node, janela, overrides, porRow) {
 //   linhas < 201  -> Receita dos Produtos Vendidos (linha 4)
 //   linhas >= 201 -> Faturamento Gerencial (linha 201)
 // ═══════════════════════════════════════════════════════════════════
-function linhaBaseDe(row) { return row < ROW_FATURAMENTO_GERENCIAL ? 4 : ROW_FATURAMENTO_GERENCIAL; }
+function linhaBaseDe(row, rows) { return row < rows.ROW_FATURAMENTO_GERENCIAL ? rows.ROW_RECEITA_BRUTA : rows.ROW_FATURAMENTO_GERENCIAL; }
 
 /** Valor da linha no mês analisado (mesma unidade da média). */
 export function valorDoMes(node, mes, overrides) {
@@ -111,17 +116,17 @@ export function valorDoMes(node, mes, overrides) {
 }
 
 /** Uma linha comparada: mês x média, com delta e variação. */
-export function compararLinha(node, mes, janela, overrides, porRow) {
-  const ehPct = PCT_ROWS.has(node.row);
+export function compararLinha(node, mes, janela, overrides, porRow, rows) {
+  const ehPct = rows.PCT_ROWS.has(node.row);
   const valor = valorDoMes(node, mes, overrides);
-  const media = mediaDaLinha(node, janela, overrides, porRow);
+  const media = mediaDaLinha(node, janela, overrides, porRow, rows);
   const delta = (valor === null || media === null) ? null : valor - media;
   const deltaPct = (delta === null || !media) ? null : delta / Math.abs(media);
 
   // ── percentual sobre a base (não se aplica a linhas que já são %) ──
   let pctMes = null, pctMedia = null, deltaPP = null;
   if (!ehPct) {
-    const base = porRow[linhaBaseDe(node.row)];
+    const base = porRow[linhaBaseDe(node.row, rows)];
     if (base) {
       const baseMes = valorDoMes(base, mes, overrides);
       if (baseMes) pctMes = valor / baseMes;
@@ -147,15 +152,15 @@ export function compararLinha(node, mes, janela, overrides, porRow) {
  * Margem bruta em % (linha 58 ÷ Receita dos Produtos Vendidos, linha 4).
  * O Gerson chama a 58 de "margem" — aqui ela aparece nas duas leituras.
  */
-export function margemBruta(mes, janela, overrides, porRow) {
-  const l58 = porRow[58], l4 = porRow[4];
-  if (!l58 || !l4) return { mes: null, media: null, deltaPP: null };
-  const receitaMes = valorDoMes(l4, mes, overrides);
-  const lucroMes = valorDoMes(l58, mes, overrides);
+export function margemBruta(mes, janela, overrides, porRow, rows) {
+  const lLucroBruto = porRow[rows.ROW_LUCRO_BRUTO], lReceitaBruta = porRow[rows.ROW_RECEITA_BRUTA];
+  if (!lLucroBruto || !lReceitaBruta) return { mes: null, media: null, deltaPP: null };
+  const receitaMes = valorDoMes(lReceitaBruta, mes, overrides);
+  const lucroMes = valorDoMes(lLucroBruto, mes, overrides);
   const pctMes = receitaMes ? lucroMes / receitaMes : null;
 
-  const receitaJanela = somaBruta(l4, janela, overrides);
-  const lucroJanela = somaBruta(l58, janela, overrides);
+  const receitaJanela = somaBruta(lReceitaBruta, janela, overrides);
+  const lucroJanela = somaBruta(lLucroBruto, janela, overrides);
   const pctMedia = receitaJanela ? lucroJanela / receitaJanela : null;
 
   return {
@@ -175,22 +180,23 @@ function ehFolha(nodes, i) {
  * nunca inventa número.
  */
 export function calcularResumoDoMes({ dreNodes, mes, mesesFechados, overrides, incluirMesAnalisado = true, topN = 15 }) {
+  const rows = resolverRows(dreNodes);
   const porRow = Object.fromEntries(dreNodes.map((n) => [n.row, n]));
   const janela = janelaDeReferencia(mesesFechados, mes, { incluirMesAnalisado });
 
-  const resultado = LINHAS_RESULTADO
+  const resultado = rows.LINHAS_RESULTADO
     .map((row) => porRow[row])
     .filter(Boolean)
-    .map((node) => compararLinha(node, mes, janela, overrides, porRow));
+    .map((node) => compararLinha(node, mes, janela, overrides, porRow, rows));
 
   // Todas as linhas comparadas (alimenta a tabela hierárquica da tela)
-  const todas = dreNodes.map((node) => compararLinha(node, mes, janela, overrides, porRow));
+  const todas = dreNodes.map((node) => compararLinha(node, mes, janela, overrides, porRow, rows));
   const porRowComparada = Object.fromEntries(todas.map((c) => [c.row, c]));
 
   // Contas analíticas que mais afastaram o mês da média
   const explicacoes = dreNodes
-    .filter((n, i) => !PCT_ROWS.has(n.row) && !n.total && ehFolha(dreNodes, i))
-    .map((node) => compararLinha(node, mes, janela, overrides, porRow))
+    .filter((n, i) => !rows.PCT_ROWS.has(n.row) && !n.total && ehFolha(dreNodes, i))
+    .map((node) => compararLinha(node, mes, janela, overrides, porRow, rows))
     .filter((c) => c.delta !== null && Math.abs(c.delta) > 0.5)
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     .slice(0, topN);
@@ -204,7 +210,7 @@ export function calcularResumoDoMes({ dreNodes, mes, mesesFechados, overrides, i
     fechamentosDaJanela: fechamentosNoPeriodo(janela),
     mediaFechamentos: janela.length ? round2(fechamentosNoPeriodo(janela) / janela.length) : null,
     resultado,
-    margemBruta: margemBruta(mes, janela, overrides, porRow),
+    margemBruta: margemBruta(mes, janela, overrides, porRow, rows),
     todas,
     porRow: porRowComparada,
     explicacoes,

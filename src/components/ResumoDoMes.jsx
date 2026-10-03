@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
-import { DRE_NODES } from "../lib/dreNodes.js";
-import { calcularResumoDoMes, montarPayloadIA, MAX_JANELA, ROW_FATURAMENTO_GERENCIAL } from "../lib/resumoMensal.js";
+import { calcularResumoDoMes, montarPayloadIA, MAX_JANELA, resolverRows } from "../lib/resumoMensal.js";
 import { persistenceEnabled, salvarResumoMensal, listarResumosMensais, carregarResumoMensal } from "../lib/supabaseClient.js";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -60,8 +59,9 @@ function agruparSecoes(nodes) {
   return secoes;
 }
 
-export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
-  const secoes = useMemo(() => agruparSecoes(DRE_NODES), []);
+export default function ResumoDoMes({ T, dreNodes, meses, mesesLabel, overrides }) {
+  const secoes = useMemo(() => agruparSecoes(dreNodes), [dreNodes]);
+  const ROW_FATURAMENTO_GERENCIAL = useMemo(() => resolverRows(dreNodes).ROW_FATURAMENTO_GERENCIAL, [dreNodes]);
   const [mes, setMes] = useState(meses[meses.length - 1]);
   const [incluirMesAnalisado, setIncluirMesAnalisado] = useState(true);
   const [expandidas, setExpandidas] = useState(() => new Set());
@@ -93,8 +93,8 @@ export default function ResumoDoMes({ T, meses, mesesLabel, overrides }) {
   }
 
   const resumo = useMemo(
-    () => calcularResumoDoMes({ dreNodes: DRE_NODES, mes, mesesFechados: meses, overrides, incluirMesAnalisado }),
-    [mes, meses, overrides, incluirMesAnalisado]
+    () => calcularResumoDoMes({ dreNodes, mes, mesesFechados: meses, overrides, incluirMesAnalisado }),
+    [dreNodes, mes, meses, overrides, incluirMesAnalisado]
   );
 
   const toggle = (row) => setExpandidas((prev) => {

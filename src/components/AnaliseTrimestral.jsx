@@ -1,13 +1,7 @@
 import { useState, useMemo, Fragment } from "react";
-import { DRE_NODES } from "../lib/dreNodes.js";
 import { mapaValores2025 } from "../lib/dre2025Reference.js";
-import { getValorNode, MESES, MESES_LABEL } from "../lib/dreReference.js";
+import { getValorNode, MESES_LABEL, localizarLinha } from "../lib/dreReference.js";
 
-// Meses vêm da mesma lista usada no resto do sistema — quando um mês
-// novo entrar (ex: Agosto), aparece aqui automaticamente. A coluna
-// "2025" fica em branco pros meses sem comparativo cadastrado ainda
-// (ver dre2025Reference.js — MES_2026_PARA_2025 só cobre Jan-Jul).
-const MESES_2026 = MESES;
 const TRIMESTRES = [
   { label: "1º Trimestre", meses: ["2026-01", "2026-02", "2026-03"] },
   { label: "2º Trimestre", meses: ["2026-04", "2026-05", "2026-06"] },
@@ -28,19 +22,26 @@ function variacao(v2025, v2026) {
   return (v2026 - v2025) / Math.abs(v2025);
 }
 
-function agruparSecoes(nodes) {
+function agruparSecoes(nodes, rowLimiteGerencial) {
   const secoes = [];
   let atual = null;
   for (const n of nodes) {
-    if (n.row >= 201) continue; // esta aba cobre só o bloco contábil (fonte não tem comparativo gerencial)
+    // esta aba cobre só o bloco contábil (a fonte 2025 não tem comparativo
+    // gerencial) — o limite é resolvido por RÓTULO, nunca um número fixo,
+    // já que a numeração de linha agora pode ser a dinâmica (ver dreReference.js).
+    if (rowLimiteGerencial !== null && n.row >= rowLimiteGerencial) continue;
     if (n.level === 0) { atual = { header: n, children: [] }; secoes.push(atual); }
     else if (atual) atual.children.push(n);
   }
   return secoes;
 }
 
-export default function AnaliseTrimestral({ T, overrides, dadosImportados }) {
-  const secoes = useMemo(() => agruparSecoes(DRE_NODES), []);
+export default function AnaliseTrimestral({ T, dreNodes, meses, numeracaoLegada, overrides, dadosImportados }) {
+  // Meses vêm da mesma lista usada no resto do sistema — quando um mês
+  // novo entrar, aparece aqui automaticamente.
+  const MESES_2026 = meses;
+  const rowLimiteGerencial = useMemo(() => localizarLinha(dreNodes, { contem: "FATURAMENTO GERENCIAL" }), [dreNodes]);
+  const secoes = useMemo(() => agruparSecoes(dreNodes, rowLimiteGerencial), [dreNodes, rowLimiteGerencial]);
   const [expandidas, setExpandidas] = useState(() => new Set());
   const toggle = (row) => setExpandidas((prev) => { const next = new Set(prev); next.has(row) ? next.delete(row) : next.add(row); return next; });
 
@@ -53,7 +54,13 @@ export default function AnaliseTrimestral({ T, overrides, dadosImportados }) {
   function valor2025(node, mes) {
     const importado = dadosImportados?.[mes]?.porCodigo?.[node.conta];
     if (importado) return importado.v2025;
-    const mapa = mapaValores2025(DRE_NODES, mes);
+    // dre2025Reference.js tem números de linha FIXOS (13, 58, 179...)
+    // que só são válidos com a numeração "legada" (seed, sem dado ao
+    // vivo ainda). A numeração dinâmica tem outra contagem de linhas —
+    // usar mapaValores2025 nesse caso daria número ERRADO silenciosamente,
+    // então preferimos não mostrar nada a mostrar errado (ver aviso na tela).
+    if (!numeracaoLegada) return null;
+    const mapa = mapaValores2025(dreNodes, mes);
     return mapa[node.row] ?? null;
   }
 
@@ -63,6 +70,11 @@ export default function AnaliseTrimestral({ T, overrides, dadosImportados }) {
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 6, maxWidth: 680 }}>
         Comparativo ano a ano (2025 x 2026), com fechamento por trimestre. Os dados de 2025 são fixos (referência histórica); os de 2026 usam os valores já importados no sistema quando disponíveis, e o arquivo "Comparativo 2025x2026" (aba Importar) para os meses seguintes.
       </p>
+      {!numeracaoLegada && (
+        <p style={{ color: T.warning, fontSize: 12, marginBottom: 10, maxWidth: 680, fontWeight: 600 }}>
+          ⚠️ Coluna 2025 temporariamente indisponível: esta tela ainda depende de uma referência (dre2025Reference.js) escrita para a numeração antiga da DRE, que não é compatível com a montagem dinâmica (dado ao vivo do Supabase) agora em uso. Pendente de atualização.
+        </p>
+      )}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button onClick={() => setExpandidas(new Set(secoes.map((s) => s.header.row)))} style={btnMini(T)}>Expandir tudo</button>
         <button onClick={() => setExpandidas(new Set())} style={btnMini(T)}>Recolher tudo</button>

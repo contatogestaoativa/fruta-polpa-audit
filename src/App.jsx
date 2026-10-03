@@ -192,6 +192,7 @@ export default function App() {
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("dre"); e.target.value = "";
     };
+    reader.onerror = () => { alert("Não consegui ler o arquivo (" + (reader.error?.message || "erro desconhecido") + "). Tente novamente."); setLoading(null); e.target.value = ""; };
     reader.readAsArrayBuffer(file);
   }, [gravar]);
 
@@ -218,6 +219,11 @@ export default function App() {
         pendentes -= 1;
         if (pendentes === 0) { setLoading(null); setActiveTab("dre"); }
       };
+      reader.onerror = () => {
+        alert(`Não consegui ler o arquivo "${file.name}" (${reader.error?.message || "erro desconhecido"}). Tente novamente.`);
+        pendentes -= 1;
+        if (pendentes === 0) setLoading(null);
+      };
       reader.readAsArrayBuffer(file);
     });
     e.target.value = "";
@@ -242,6 +248,7 @@ export default function App() {
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("dre"); e.target.value = "";
     };
+    reader.onerror = () => { alert("Não consegui ler o arquivo (" + (reader.error?.message || "erro desconhecido") + "). Tente novamente."); setLoading(null); e.target.value = ""; };
     reader.readAsArrayBuffer(file);
   }, [gravar]);
 
@@ -267,6 +274,7 @@ export default function App() {
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("produtos"); e.target.value = "";
     };
+    reader.onerror = () => { alert("Não consegui ler o arquivo (" + (reader.error?.message || "erro desconhecido") + "). Tente novamente."); setLoading(null); e.target.value = ""; };
     reader.readAsArrayBuffer(file);
   }, [gravar]);
 
@@ -303,6 +311,7 @@ export default function App() {
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("clientes"); e.target.value = "";
     };
+    reader.onerror = () => { alert("Não consegui ler o arquivo (" + (reader.error?.message || "erro desconhecido") + "). Tente novamente."); setLoading(null); e.target.value = ""; };
     reader.readAsArrayBuffer(file);
   }, [gravar]);
 
@@ -338,6 +347,7 @@ export default function App() {
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("trimestral"); e.target.value = "";
     };
+    reader.onerror = () => { alert("Não consegui ler o arquivo (" + (reader.error?.message || "erro desconhecido") + "). Tente novamente."); setLoading(null); e.target.value = ""; };
     reader.readAsArrayBuffer(file);
   }, []);
 

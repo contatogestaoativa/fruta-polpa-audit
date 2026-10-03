@@ -1,24 +1,29 @@
 import { useState, useMemo, Fragment } from "react";
-import { DRE_NODES } from "../lib/dreNodes.js";
-import { getValorNode, REF, localizarLinha } from "../lib/dreReference.js";
+import { getValorNode, REF_SEED, localizarLinha } from "../lib/dreReference.js";
 import { fechamentosNoMes, fechamentosNoPeriodo } from "../lib/fechamentos.js";
 
-// Resolvidas por RÓTULO, não por número fixo — a planilha-mestra já
-// reestruturou uma vez (ver dreReference.js) e vai reestruturar de novo.
-const ROW_LUCRATIVIDADE_CONTABIL = localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE CONTÁBIL" });
-const ROW_LUCRATIVIDADE_GERENCIAL = localizarLinha(DRE_NODES, { labelExato: "LUCRATIVIDADE GERENCIAL" });
-const ROW_LUCRATIVIDADE_SUBVENCOES = localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" });
-const ROW_LUCRO_OP_CONTABIL_GER = localizarLinha(DRE_NODES, { contem: "LUCRO OPERACIONAL DA CONTÁBIL" });
-const ROW_LUCRO_OP_GERENCIAL = localizarLinha(DRE_NODES, { labelExato: "LUCRO OPERACIONAL GERENCIAL" });
-const ROW_LUCRO_COM_SUBVENCOES = localizarLinha(DRE_NODES, { labelExato: "LUCRO COM SUBVENÇÕES" });
-const ROW_FATURAMENTO_GERENCIAL = localizarLinha(DRE_NODES, { contem: "FATURAMENTO GERENCIAL" });
+// Resolvidas por RÓTULO, não por número fixo — a DRE agora é montada
+// em tempo real (seed + dado ao vivo), então isso é recalculado toda
+// vez que `dreNodes` mudar (ver useMemo dentro do componente), não
+// mais uma vez só ao carregar o arquivo.
+function resolverRows(dreNodes) {
+  const ROW_LUCRATIVIDADE_CONTABIL = localizarLinha(dreNodes, { contem: "LUCRATIVIDADE CONTÁBIL" });
+  const ROW_LUCRATIVIDADE_GERENCIAL = localizarLinha(dreNodes, { labelExato: "LUCRATIVIDADE GERENCIAL" });
+  const ROW_LUCRATIVIDADE_SUBVENCOES = localizarLinha(dreNodes, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" });
+  const ROW_LUCRO_OP_CONTABIL_GER = localizarLinha(dreNodes, { contem: "LUCRO OPERACIONAL DA CONTÁBIL" });
+  const ROW_LUCRO_OP_GERENCIAL = localizarLinha(dreNodes, { labelExato: "LUCRO OPERACIONAL GERENCIAL" });
+  const ROW_LUCRO_COM_SUBVENCOES = localizarLinha(dreNodes, { labelExato: "LUCRO COM SUBVENÇÕES" });
+  const ROW_FATURAMENTO_GERENCIAL = localizarLinha(dreNodes, { contem: "FATURAMENTO GERENCIAL" });
+  const ROW_RECEITA_BRUTA = localizarLinha(dreNodes, { contem: "RECEITA DOS PRODUTOS VENDIDOS", nivel: 0 });
 
-const PCT_ROWS = new Set([ROW_LUCRATIVIDADE_CONTABIL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRATIVIDADE_SUBVENCOES]);
-const PCT_PARA_LINHA_MONEY = {
-  [ROW_LUCRATIVIDADE_CONTABIL]: ROW_LUCRO_OP_CONTABIL_GER,
-  [ROW_LUCRATIVIDADE_GERENCIAL]: ROW_LUCRO_OP_GERENCIAL,
-  [ROW_LUCRATIVIDADE_SUBVENCOES]: ROW_LUCRO_COM_SUBVENCOES,
-}; // linha % -> linha em R$ correspondente, p/ acumular certo
+  const PCT_ROWS = new Set([ROW_LUCRATIVIDADE_CONTABIL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRATIVIDADE_SUBVENCOES]);
+  const PCT_PARA_LINHA_MONEY = {
+    [ROW_LUCRATIVIDADE_CONTABIL]: ROW_LUCRO_OP_CONTABIL_GER,
+    [ROW_LUCRATIVIDADE_GERENCIAL]: ROW_LUCRO_OP_GERENCIAL,
+    [ROW_LUCRATIVIDADE_SUBVENCOES]: ROW_LUCRO_COM_SUBVENCOES,
+  }; // linha % -> linha em R$ correspondente, p/ acumular certo
+  return { ROW_FATURAMENTO_GERENCIAL, ROW_RECEITA_BRUTA, PCT_ROWS, PCT_PARA_LINHA_MONEY };
+}
 const HEADER_TOP = 0; // agora relativo ao próprio painel de rolagem (não mais à página)
 const ALTURA_LINHA1 = 46; // altura da 1ª linha do cabeçalho (mês + "N fech.") — usada p/ grudar a 2ª linha
 
@@ -51,14 +56,15 @@ function agruparSecoes(nodes) {
   return secoes;
 }
 
-export default function DreHierarquica({ T, meses, mesesLabel, overrides, importedFlags, blocoVisivel = "ambos" }) {
-  const secoesTodas = useMemo(() => agruparSecoes(DRE_NODES), []);
+export default function DreHierarquica({ T, dreNodes, meses, mesesLabel, overrides, importedFlags, blocoVisivel = "ambos" }) {
+  const { ROW_FATURAMENTO_GERENCIAL, ROW_RECEITA_BRUTA, PCT_ROWS, PCT_PARA_LINHA_MONEY } = useMemo(() => resolverRows(dreNodes), [dreNodes]);
+  const secoesTodas = useMemo(() => agruparSecoes(dreNodes), [dreNodes]);
   const secoes = useMemo(() => {
     if (blocoVisivel === "contabil") return secoesTodas.filter((s) => s.header.row < ROW_FATURAMENTO_GERENCIAL);
     if (blocoVisivel === "gerencial") return secoesTodas.filter((s) => s.header.row >= ROW_FATURAMENTO_GERENCIAL);
     return secoesTodas;
-  }, [secoesTodas, blocoVisivel]);
-  const porRow = useMemo(() => Object.fromEntries(DRE_NODES.map((n) => [n.row, n])), []);
+  }, [secoesTodas, blocoVisivel, ROW_FATURAMENTO_GERENCIAL]);
+  const porRow = useMemo(() => Object.fromEntries(dreNodes.map((n) => [n.row, n])), [dreNodes]);
   const [expandidas, setExpandidas] = useState(() => new Set());
   const [notaAberta, setNotaAberta] = useState(null);
   const [mostrarPct, setMostrarPct] = useState(false);
@@ -95,7 +101,7 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
     // 204/214/219 — têm fórmula própria, sobre Faturamento Gerencial —
     // linha 201 — e não passam por aqui, ver PCT_ROWS acima.)
     // (o % não muda com "por fechamento" — é razão entre duas linhas do mesmo mês)
-    const base = REF.receitaBruta[mes];
+    const base = getValorNode(porRow[ROW_RECEITA_BRUTA], mes, overrides);
     const valor = valorBruto(node, mes);
     if (!base || valor === null || valor === undefined) return null;
     return (valor / base) * 100;
@@ -104,8 +110,8 @@ export default function DreHierarquica({ T, meses, mesesLabel, overrides, import
   // Total acumulado dos meses carregados (soma simples para valores em R$;
   // para linhas de % recalcula com base no acumulado da linha em R$
   // correspondente ÷ acumulado da base certa — nunca soma %).
-  const totalFatGerencial = useMemo(() => meses.reduce((s, m) => s + (REF.faturamentoGerencial[m] || 0), 0), [meses]);
-  const totalReceitaBruta = useMemo(() => meses.reduce((s, m) => s + (REF.receitaBruta[m] || 0), 0), [meses]);
+  const totalFatGerencial = useMemo(() => meses.reduce((s, m) => s + (REF_SEED.faturamentoGerencial[m] || 0), 0), [meses]);
+  const totalReceitaBruta = useMemo(() => meses.reduce((s, m) => s + (getValorNode(porRow[ROW_RECEITA_BRUTA], m, overrides) || 0), 0), [meses, porRow, ROW_RECEITA_BRUTA, overrides]);
   function somaBrutaDaLinha(node) {
     return meses.reduce((s, m) => s + (valorBruto(node, m) || 0), 0);
   }

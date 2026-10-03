@@ -1,6 +1,5 @@
 import { useState, useMemo, Fragment } from "react";
-import { DRE_NODES } from "../lib/dreNodes.js";
-import { getValorNode, REF, localizarLinha } from "../lib/dreReference.js";
+import { getValorNode, REF_SEED, localizarLinha } from "../lib/dreReference.js";
 import { fechamentosNoMes, fechamentosNoPeriodo } from "../lib/fechamentos.js";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -22,21 +21,25 @@ import { fechamentosNoMes, fechamentosNoPeriodo } from "../lib/fechamentos.js";
 // número fixo — a planilha-mestra já reestruturou uma vez.
 // ═══════════════════════════════════════════════════════════════════
 
-const ROW_LUCRATIVIDADE_CONTABIL = localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE CONTÁBIL" });
-const ROW_LUCRATIVIDADE_GERENCIAL = localizarLinha(DRE_NODES, { labelExato: "LUCRATIVIDADE GERENCIAL" });
-const ROW_LUCRATIVIDADE_SUBVENCOES = localizarLinha(DRE_NODES, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" });
-const ROW_LUCRO_OP_CONTABIL_GER = localizarLinha(DRE_NODES, { contem: "LUCRO OPERACIONAL DA CONTÁBIL" });
-const ROW_LUCRO_OP_GERENCIAL = localizarLinha(DRE_NODES, { labelExato: "LUCRO OPERACIONAL GERENCIAL" });
-const ROW_LUCRO_COM_SUBVENCOES = localizarLinha(DRE_NODES, { labelExato: "LUCRO COM SUBVENÇÕES" });
-const ROW_FATURAMENTO_GERENCIAL = localizarLinha(DRE_NODES, { contem: "FATURAMENTO GERENCIAL" });
+function resolverRows(dreNodes) {
+  const ROW_LUCRATIVIDADE_CONTABIL = localizarLinha(dreNodes, { contem: "LUCRATIVIDADE CONTÁBIL" });
+  const ROW_LUCRATIVIDADE_GERENCIAL = localizarLinha(dreNodes, { labelExato: "LUCRATIVIDADE GERENCIAL" });
+  const ROW_LUCRATIVIDADE_SUBVENCOES = localizarLinha(dreNodes, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" });
+  const ROW_LUCRO_OP_CONTABIL_GER = localizarLinha(dreNodes, { contem: "LUCRO OPERACIONAL DA CONTÁBIL" });
+  const ROW_LUCRO_OP_GERENCIAL = localizarLinha(dreNodes, { labelExato: "LUCRO OPERACIONAL GERENCIAL" });
+  const ROW_LUCRO_COM_SUBVENCOES = localizarLinha(dreNodes, { labelExato: "LUCRO COM SUBVENÇÕES" });
+  const ROW_FATURAMENTO_GERENCIAL = localizarLinha(dreNodes, { contem: "FATURAMENTO GERENCIAL" });
+  const ROW_RECEITA_BRUTA = localizarLinha(dreNodes, { contem: "RECEITA DOS PRODUTOS VENDIDOS", nivel: 0 });
 
-const PCT_ROWS = new Set([ROW_LUCRATIVIDADE_CONTABIL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRATIVIDADE_SUBVENCOES]);
-const PCT_PARA_LINHA_MONEY = {
-  [ROW_LUCRATIVIDADE_CONTABIL]: ROW_LUCRO_OP_CONTABIL_GER,
-  [ROW_LUCRATIVIDADE_GERENCIAL]: ROW_LUCRO_OP_GERENCIAL,
-  [ROW_LUCRATIVIDADE_SUBVENCOES]: ROW_LUCRO_COM_SUBVENCOES,
-};
-const LINHAS_RESULTADO = [ROW_FATURAMENTO_GERENCIAL, ROW_LUCRO_OP_GERENCIAL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRO_COM_SUBVENCOES, ROW_LUCRATIVIDADE_SUBVENCOES, ROW_LUCRATIVIDADE_CONTABIL]; // cards do topo
+  const PCT_ROWS = new Set([ROW_LUCRATIVIDADE_CONTABIL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRATIVIDADE_SUBVENCOES]);
+  const PCT_PARA_LINHA_MONEY = {
+    [ROW_LUCRATIVIDADE_CONTABIL]: ROW_LUCRO_OP_CONTABIL_GER,
+    [ROW_LUCRATIVIDADE_GERENCIAL]: ROW_LUCRO_OP_GERENCIAL,
+    [ROW_LUCRATIVIDADE_SUBVENCOES]: ROW_LUCRO_COM_SUBVENCOES,
+  };
+  const LINHAS_RESULTADO = [ROW_FATURAMENTO_GERENCIAL, ROW_LUCRO_OP_GERENCIAL, ROW_LUCRATIVIDADE_GERENCIAL, ROW_LUCRO_COM_SUBVENCOES, ROW_LUCRATIVIDADE_SUBVENCOES, ROW_LUCRATIVIDADE_CONTABIL]; // cards do topo
+  return { ROW_FATURAMENTO_GERENCIAL, ROW_RECEITA_BRUTA, PCT_ROWS, PCT_PARA_LINHA_MONEY, LINHAS_RESULTADO };
+}
 
 function fmtMoeda(n) {
   if (n === null || n === undefined || Number.isNaN(n)) return "—";
@@ -87,9 +90,10 @@ function intervalo(meses, de, ate) {
   return i <= j ? meses.slice(i, j + 1) : meses.slice(j, i + 1);
 }
 
-export default function ComparativoPeriodos({ T, meses, mesesLabel, overrides }) {
-  const secoes = useMemo(() => agruparSecoes(DRE_NODES), []);
-  const porRow = useMemo(() => Object.fromEntries(DRE_NODES.map((n) => [n.row, n])), []);
+export default function ComparativoPeriodos({ T, dreNodes, meses, mesesLabel, overrides }) {
+  const { ROW_FATURAMENTO_GERENCIAL, ROW_RECEITA_BRUTA, PCT_ROWS, PCT_PARA_LINHA_MONEY, LINHAS_RESULTADO } = useMemo(() => resolverRows(dreNodes), [dreNodes]);
+  const secoes = useMemo(() => agruparSecoes(dreNodes), [dreNodes]);
+  const porRow = useMemo(() => Object.fromEntries(dreNodes.map((n) => [n.row, n])), [dreNodes]);
   const [expandidas, setExpandidas] = useState(() => new Set());
   const [base, setBase] = useState("total"); // total | mensal | fechamento
 
@@ -133,7 +137,7 @@ export default function ComparativoPeriodos({ T, meses, mesesLabel, overrides })
     if (!lista.length) return null;
     if (PCT_ROWS.has(node.row)) {
       const moneyRow = porRow[PCT_PARA_LINHA_MONEY[node.row]];
-      const fat = lista.reduce((s, m) => s + (REF.faturamentoGerencial[m] || 0), 0);
+      const fat = lista.reduce((s, m) => s + (REF_SEED.faturamentoGerencial[m] || 0), 0);
       if (!moneyRow || !fat) return null;
       return somaBruta(moneyRow, lista) / fat;
     }
@@ -143,8 +147,8 @@ export default function ComparativoPeriodos({ T, meses, mesesLabel, overrides })
   function pctVertical(node, lista) {
     if (PCT_ROWS.has(node.row) || !lista.length) return null;
     const baseVertical = node.row < ROW_FATURAMENTO_GERENCIAL
-      ? lista.reduce((s, m) => s + (REF.receitaBruta[m] || 0), 0)
-      : lista.reduce((s, m) => s + (REF.faturamentoGerencial[m] || 0), 0);
+      ? lista.reduce((s, m) => s + (getValorNode(porRow[ROW_RECEITA_BRUTA], m, overrides) || 0), 0)
+      : lista.reduce((s, m) => s + (REF_SEED.faturamentoGerencial[m] || 0), 0);
     if (!baseVertical) return null;
     return (somaBruta(node, lista) / baseVertical) * 100;
   }
@@ -158,22 +162,22 @@ export default function ComparativoPeriodos({ T, meses, mesesLabel, overrides })
     return { node, a, b, delta, deltaPct, ehPct, pctA: pctVertical(node, mesesA), pctB: pctVertical(node, mesesB) };
   }
 
-  const cards = useMemo(() => LINHAS_RESULTADO.map((row) => linhaComparada(porRow[row])).filter((c) => c.node), [mesesA, mesesB, base, overrides]);
+  const cards = useMemo(() => LINHAS_RESULTADO.map((row) => linhaComparada(porRow[row])).filter((c) => c.node), [mesesA, mesesB, base, overrides, LINHAS_RESULTADO, porRow]);
 
   // Top movers: só contas ANALÍTICAS (folhas da árvore) — assim o mesmo
   // dinheiro não aparece duas vezes, uma no subtotal e outra no detalhe.
   const topMovers = useMemo(() => {
-    return DRE_NODES
+    return dreNodes
       .filter((n, i) => {
         if (PCT_ROWS.has(n.row) || n.total) return false;
-        const proximo = DRE_NODES[i + 1];
+        const proximo = dreNodes[i + 1];
         return !proximo || proximo.level <= n.level; // folha
       })
       .map(linhaComparada)
       .filter((c) => c.delta !== null && Math.abs(c.delta) > 0.5)
       .sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta))
       .slice(0, 12);
-  }, [mesesA, mesesB, base, overrides]);
+  }, [mesesA, mesesB, base, overrides, dreNodes, PCT_ROWS]);
 
   const sobrepoe = mesesA.some((m) => mesesB.includes(m));
   const rotuloBase = base === "total" ? "total do período" : base === "mensal" ? "média mensal" : "por fechamento";

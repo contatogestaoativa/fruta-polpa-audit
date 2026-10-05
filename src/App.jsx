@@ -584,7 +584,7 @@ export default function App() {
         {activeTab === "reconciliacao" && (hasData ? <ReconciliacaoTab T={T} historico={historico} meses={MESES} /> : <EmptyState T={T} onGoImport={() => setActiveTab("import")} />)}
         {activeTab === "anomalias" && <AnomaliasTab T={T} dreNodes={dreNodes} meses={MESES} limiarPct={limiarPct} setLimiarPct={setLimiarPct} overrides={overrides} />}
         {activeTab === "impostos" && <ImpostosTab T={T} dreNodes={dreNodes} dre={dre} meses={MESES} overrides={overrides} />}
-        {activeTab === "produtos" && <ProdutosTab T={T} historico={historico} fatGerencialPorMes={fatGerencial} overrides={overrides} />}
+        {activeTab === "produtos" && <ProdutosTab T={T} historico={historico} fatGerencialPorMes={fatGerencial} dre={dre} />}
         {activeTab === "clientes" && <ClientesTab T={T} dadosClientes={dadosClientes} />}
         {activeTab === "trimestral" && <AnaliseTrimestral T={T} dreNodes={dreNodes} meses={MESES} numeracaoLegada={numeracaoLegada} overrides={overrides} dadosImportados={dadosTrimestral} />}
         {activeTab === "rastreabilidade" && <RastreabilidadeTab T={T} />}
@@ -994,7 +994,7 @@ function ImpostosTab({ T, dreNodes, dre, meses, overrides }) {
 const ALTURA_CABECALHO = 30;
 const ALTURA_DEPARTAMENTO = 30;
 
-function ProdutosTab({ T, historico, fatGerencialPorMes, overrides }) {
+function ProdutosTab({ T, historico, fatGerencialPorMes, dre }) {
   const dados1464 = historico["1464-produtos"] || {};
   const mesesDisponiveis = Object.keys(dados1464).sort();
   const [mesSelecionado, setMesSelecionado] = useState(mesesDisponiveis[mesesDisponiveis.length - 1] || null);
@@ -1028,8 +1028,11 @@ function ProdutosTab({ T, historico, fatGerencialPorMes, overrides }) {
   }
   const fatGerencial = fatGerencialPorMes?.[mesSelecionado];
   const ticketMedio = calcularTicketMedio(fatGerencial, dadosMes.totalQuantidade);
-  const lucratividadeGerencial = overrides?.[mesSelecionado]?.[214] != null ? overrides[mesSelecionado][214] * 100 : null;
-  const lucratividadeContabil = overrides?.[mesSelecionado]?.[204] != null ? overrides[mesSelecionado][204] * 100 : null;
+  // Lucratividades já calculadas (em %) pela DRE do mês. Antes isto lia as linhas 214 e 204 por
+  // número fixo — e a planilha foi reestruturada, então apontava para Notas Técnicas e Lucro Operacional.
+  const dreDoMes = dre?.find((d) => d.mes === mesSelecionado);
+  const lucratividadeGerencial = dreDoMes?.lucratividadeGerencial ?? null;
+  const lucratividadeContabil = dreDoMes?.lucratividadeContabil ?? null;
   const maiorFaturamento = Math.max(1, ...dadosMes.produtos.map((p) => p.faturamento || 0));
   // Exibição em ordem alfabética por descrição, separada por departamento
   // comercial (Polpas / Açaí / Morango Congelado). A regra de classificação

@@ -59,7 +59,7 @@ function agruparSecoes(nodes) {
   return secoes;
 }
 
-export default function ResumoDoMes({ T, dreNodes, meses, mesesLabel, overrides }) {
+export default function ResumoDoMes({ T, dreNodes, fatGerencial, meses, mesesLabel, overrides }) {
   const secoes = useMemo(() => agruparSecoes(dreNodes), [dreNodes]);
   const ROW_FATURAMENTO_GERENCIAL = useMemo(() => resolverRows(dreNodes).ROW_FATURAMENTO_GERENCIAL, [dreNodes]);
   const [mes, setMes] = useState(meses[meses.length - 1]);
@@ -93,8 +93,8 @@ export default function ResumoDoMes({ T, dreNodes, meses, mesesLabel, overrides 
   }
 
   const resumo = useMemo(
-    () => calcularResumoDoMes({ dreNodes, mes, mesesFechados: meses, overrides, incluirMesAnalisado }),
-    [dreNodes, mes, meses, overrides, incluirMesAnalisado]
+    () => calcularResumoDoMes({ dreNodes, mes, mesesFechados: meses, overrides, fatGerencial, incluirMesAnalisado }),
+    [dreNodes, mes, meses, overrides, fatGerencial, incluirMesAnalisado]
   );
 
   const toggle = (row) => setExpandidas((prev) => {

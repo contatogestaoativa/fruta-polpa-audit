@@ -10,7 +10,7 @@ import ResumoDoMes from "./components/ResumoDoMes.jsx";
 import { parseAnaliseTrimestral, ehArquivoAnaliseTrimestral } from "./lib/parsers/analiseTrimestral.js";
 import { parseDescontosConcedidos, detectarNotasDuplicadas, parseDescontosConcedidosCompetenciaPura } from "./lib/parsers/descontosConcedidos.js";
 import { parseGrupo222, detectarMesPredominante } from "./lib/parsers/grupo222.js";
-import { parseGrupo750Termo1Lote, parseGrupo750Termo2Lote, ehLoteMultiMes } from "./lib/parsers/grupo750.js";
+import { parseGrupo750Termo1Lote, parseGrupo750Termo2Lote, parseGrupo750Termo1Unico, parseGrupo750Termo2Unico, ehLoteMultiMes } from "./lib/parsers/grupo750.js";
 import { parseProdutos1464, calcularTicketMedio } from "./lib/parsers/produtos1464.js";
 import { parseClientes1464, ehArquivoClientes1464 } from "./lib/parsers/clientes1464.js";
 import ClientesTab from "./components/ClientesTab.jsx";
@@ -22,8 +22,8 @@ import {
   importarLoteEGravarLinha, carregarHistoricoDre,
 } from "./lib/supabaseClient.js";
 import {
-  MESES_LABEL, OFICIAL_SEED, REF_SEED, montarDreDoMes, calcularCargaTributaria, detectarAnomaliasTodasLinhas,
-  localizarLinha, construirDreNodesEfetivo, construirMesesEfetivo, DRE_NODES_SEED,
+  MESES_LABEL, OFICIAL_SEED, AJUSTES_SEED, montarDreDoMes, calcularCargaTributaria, detectarAnomaliasTodasLinhas,
+  localizarLinha, construirDreNodesEfetivo, construirMesesEfetivo, gerencialDoBanco, DRE_NODES_SEED,
 } from "./lib/dreReference.js";
 import { fechamentosNoMes } from "./lib/fechamentos.js";
 
@@ -50,6 +50,13 @@ function resolverRows(dreNodes) {
     lucratividadeGerencial: localizarLinha(dreNodes, { labelExato: "LUCRATIVIDADE GERENCIAL" }),
     lucroComSubvencoes: localizarLinha(dreNodes, { labelExato: "LUCRO COM SUBVENÇÕES" }),
     lucratividadeComSubvencoes: localizarLinha(dreNodes, { contem: "LUCRATIVIDADE COM AS SUBVENÇÕES" }),
+    // linhas do bloco gerencial exibidas na árvore (precisam de valor também nos meses novos)
+    faturamentoGerencial: localizarLinha(dreNodes, { contem: "FATURAMENTO GERENCIAL" }),
+    depreciacaoGerencial: localizarLinha(dreNodes, { contem: "DEPRECIAÇÃO ( + )" }),
+    descontos2025: localizarLinha(dreNodes, { contem: "DESCONTOS CONCEDIDOS 2025" }),
+    descontos2026: localizarLinha(dreNodes, { contem: "DESCONTOS CONCEDIDOS 2026" }),
+    descontosPorComp: localizarLinha(dreNodes, { contem: "DESCONTOS CONCEDIDOS POR COMP" }),
+    notasTecnicas: localizarLinha(dreNodes, { contem: "NOTAS TÉCNICAS" }),
   };
 }
 
@@ -101,6 +108,49 @@ function valorLinha138(h138, regime) {
   if (regime === "caixa") return h138.extra?.saldoCaixa;
   if (regime === "competencia-completa") return h138.extra?.saldoCompetenciaCompleta ?? h138.extra?.saldoCompetencia;
   return h138.extra?.saldoCompetencia;
+}
+
+// Cálculo da DRE de cada mês (contábil + gerencial) a partir do histórico importado e do que o
+// script gravou no Supabase. Fica fora do componente para poder ser testada isoladamente.
+function calcularDrePorMes(historico, regime, dreNodes, MESES, ROW) {
+  const overridesAcc = {}, flagsAcc = {}, dreAcc = [];
+  MESES.forEach((mes) => {
+    const h138 = historico["2107"]?.[mes];
+    const h209 = historico["750-222"]?.[mes];
+    const h211a = historico["124-750"]?.[mes];
+    const h211b = historico["750-caixa10"]?.[mes];
+
+    // Bloco gerencial vindo do banco (script): Faturamento Gerencial, Grupo 222 e
+    // Notas Técnicas, já somados ao ajuste manual do mês. Import manual de arquivo
+    // (750-222) continua tendo prioridade sobre o banco.
+    const g = gerencialDoBanco(mes, historico["banco-gerencial"]?.[mes]?.extra, historico["ajustes-gerenciais"]?.[mes]?.extra);
+
+    const linha138 = valorLinha138(h138, regime);
+    const linha209 = h209 ? h209.valor : g?.grupo222;
+    // Grupo 750 (linha 211) = termo 1 + termo 2. Um termo importado na tela vence o banco nesse termo;
+    // o termo que não foi importado vem do banco. Sem import nenhum, vale o total do banco (com ajuste).
+    const termo1 = h211a ? h211a.valor : g?.grupo750Termo1;
+    const termo2 = h211b ? h211b.valor : g?.grupo750Termo2;
+    let linha211;
+    if (h211a || h211b) linha211 = Math.round(((termo1 || 0) + (termo2 || 0)) * 100) / 100;
+    else if (g?.grupo750 !== undefined) linha211 = g.grupo750;
+    const linha211Parcial = Boolean(h211a || h211b) && (termo1 === undefined || termo2 === undefined);
+
+    const d = montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211, nfPosto: g?.notasTecnicas, faturamentoGerencial: g?.faturamentoGerencial });
+    dreAcc.push({ ...d, linha138Live: Boolean(h138), linha209Live: Boolean(h209), linha211Live: Boolean(h211a || h211b), linha211Parcial, gerencialBanco: Boolean(g) });
+
+    overridesAcc[mes] = {
+      [ROW.receitaLiquida]: d.receitaLiquida, [ROW.lucroBruto]: d.lucroBruto, [ROW.despesasOperacionais]: d.despesasOperacionais,
+      [ROW.descontosConcedidos]: d.linha138, [ROW.lucroOperacionalContabil]: d.lucroOperacionalContabil, [ROW.resultadoAntesCsll]: d.resultadoAntesCsll,
+      [ROW.resultadoLiquido]: d.resultadoLiquido, [ROW.lucroOperacionalContabilGer]: d.lucroOperacionalContabil, [ROW.lucratividadeContabil]: d.lucratividadeContabil / 100,
+      [ROW.grupo222Gerencial]: d.linha209, [ROW.grupo750Gerencial]: d.linha211, [ROW.lucroOperacionalGerencial]: d.lucroOperacionalGerencial,
+      [ROW.lucratividadeGerencial]: d.lucratividadeGerencial / 100, [ROW.lucroComSubvencoes]: d.lucroComSubvencoes, [ROW.lucratividadeComSubvencoes]: d.lucratividadeComSubvencoes / 100,
+      [ROW.faturamentoGerencial]: d.faturamentoGerencial, [ROW.depreciacaoGerencial]: d.depreciacao, [ROW.notasTecnicas]: d.nfPosto,
+      [ROW.descontos2025]: d.descontos2025, [ROW.descontos2026]: d.descontos2026, [ROW.descontosPorComp]: d.descontosPorComp,
+    };
+    flagsAcc[mes] = { [ROW.descontosConcedidos]: Boolean(h138), [ROW.grupo222Gerencial]: Boolean(h209), [ROW.grupo750Gerencial]: Boolean(h211a || h211b) };
+  });
+  return { dre: dreAcc, overrides: overridesAcc, importedFlags: flagsAcc };
 }
 
 export default function App() {
@@ -229,21 +279,36 @@ export default function App() {
     e.target.value = "";
   }, [gravar]);
 
-  const handleFileLote = useCallback((rotinaId, parseLote) => (e) => {
+  // Aceita o arquivo em lote (uma aba por mês) OU o arquivo de um único mês, que é como
+  // a contabilidade entrega a cada fechamento. No Termo 1 (grupo 750) o arquivo não traz
+  // data, então o mês é perguntado; no Termo 2 (538, caixa 10) ele vem das datas dos lançamentos.
+  const handleFileLote = useCallback((rotinaId, parseLote, parseUnico) => (e) => {
     const file = e.target.files[0]; if (!file) return;
     setLoading(rotinaId);
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
         const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
+        let resultado = null;
         if (ehLoteMultiMes(wb)) {
-          const resultado = parseLote(wb);
+          resultado = parseLote(wb);
+        } else if (parseUnico) {
+          let mesInformado = null;
+          if (rotinaId === "124-750") {
+            const resposta = window.prompt("Este arquivo é de um único mês e não traz a data. Qual mês ele representa? (AAAA-MM, ex: 2026-08)", "");
+            if (resposta === null) { setLoading(null); e.target.value = ""; return; } // cancelou
+            mesInformado = String(resposta).trim();
+            if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mesInformado)) { alert("Mês inválido. Use o formato AAAA-MM, por exemplo 2026-08."); setLoading(null); e.target.value = ""; return; }
+          }
+          resultado = parseUnico(wb, mesInformado);
+        }
+        if (resultado && Object.keys(resultado).length > 0) {
           Object.entries(resultado).forEach(([mes, dados]) => {
             const valor = rotinaId === "124-750" ? dados.valorHistoricoAdotado : dados.total;
             gravar(rotinaId, mes, file.name, valor);
           });
         } else {
-          alert("Este arquivo não parece estar no formato 'uma aba por mês' (lote).");
+          alert("Não encontrei os dados esperados neste arquivo (esperava o relatório 124 em lote, ou de um único mês).");
         }
       } catch (err) { alert("Erro ao processar arquivo: " + err.message); }
       setLoading(null); setActiveTab("dre"); e.target.value = "";
@@ -365,32 +430,19 @@ export default function App() {
   const numeracaoLegada = dreNodes === DRE_NODES_SEED;
 
   // ── Recalcula a DRE completa por mês ──
-  const { dre, overrides, importedFlags } = useMemo(() => {
-    const overridesAcc = {}, flagsAcc = {}, dreAcc = [];
-    MESES.forEach((mes) => {
-      const h138 = historico["2107"]?.[mes];
-      const h209 = historico["750-222"]?.[mes];
-      const h211a = historico["124-750"]?.[mes];
-      const h211b = historico["750-caixa10"]?.[mes];
+  const { dre, overrides, importedFlags } = useMemo(
+    () => calcularDrePorMes(historico, regime, dreNodes, MESES, ROW),
+    [historico, regime, dreNodes, MESES, ROW]
+  );
 
-      const linha138 = valorLinha138(h138, regime);
-      const linha209 = h209 ? h209.valor : undefined;
-      const linha211 = (h211a || h211b) ? Math.round(((h211a?.valor || 0) + (h211b?.valor || 0)) * 100) / 100 : undefined;
+  // Faturamento Gerencial por mês (do banco quando existe, senão da referência):
+  // base das colunas de % e das lucratividades em todas as telas.
+  const fatGerencial = useMemo(() => Object.fromEntries(dre.map((d) => [d.mes, d.faturamentoGerencial])), [dre]);
 
-      const d = montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211 });
-      dreAcc.push({ ...d, linha138Live: Boolean(h138), linha209Live: Boolean(h209), linha211Live: Boolean(h211a || h211b), linha211Parcial: Boolean(h211a) !== Boolean(h211b) });
-
-      overridesAcc[mes] = {
-        [ROW.receitaLiquida]: d.receitaLiquida, [ROW.lucroBruto]: d.lucroBruto, [ROW.despesasOperacionais]: d.despesasOperacionais,
-        [ROW.descontosConcedidos]: d.linha138, [ROW.lucroOperacionalContabil]: d.lucroOperacionalContabil, [ROW.resultadoAntesCsll]: d.resultadoAntesCsll,
-        [ROW.resultadoLiquido]: d.resultadoLiquido, [ROW.lucroOperacionalContabilGer]: d.lucroOperacionalContabil, [ROW.lucratividadeContabil]: d.lucratividadeContabil / 100,
-        [ROW.grupo222Gerencial]: d.linha209, [ROW.grupo750Gerencial]: d.linha211, [ROW.lucroOperacionalGerencial]: d.lucroOperacionalGerencial,
-        [ROW.lucratividadeGerencial]: d.lucratividadeGerencial / 100, [ROW.lucroComSubvencoes]: d.lucroComSubvencoes, [ROW.lucratividadeComSubvencoes]: d.lucratividadeComSubvencoes / 100,
-      };
-      flagsAcc[mes] = { [ROW.descontosConcedidos]: Boolean(h138), [ROW.grupo222Gerencial]: Boolean(h209), [ROW.grupo750Gerencial]: Boolean(h211a || h211b) };
-    });
-    return { dre: dreAcc, overrides: overridesAcc, importedFlags: flagsAcc };
-  }, [historico, regime, dreNodes, MESES, ROW]);
+  // Ajuste manual de Grupo 222 / Notas Técnicas informado na aba Importar.
+  const salvarAjusteGerencial = useCallback((mes, ajustes) => {
+    gravar("ajustes-gerenciais", mes, "ajuste manual (tela)", Math.round((ajustes.ajuste222 + ajustes.ajusteNT + (ajustes.ajuste750 || 0)) * 100) / 100, ajustes);
+  }, [gravar]);
 
   const hasData = Object.values(historico).some((h) => Object.keys(h).length > 0);
   const podeGerenciarImportacao = podeImportar(perfil);
@@ -493,10 +545,10 @@ export default function App() {
       <ErrorBoundary key={activeTab}>
         {activeTab === "import" && (
           podeGerenciarImportacao ? (
-            <ImportTab T={T} historico={historico} loading={loading}
+            <ImportTab T={T} historico={historico} loading={loading} meses={MESES} onSalvarAjuste={salvarAjusteGerencial}
               handleFile2107={handleFile2107} handleFilesGrupo222={handleFilesGrupo222}
-              handleFileTermo1={handleFileLote("124-750", parseGrupo750Termo1Lote)}
-              handleFileTermo2={handleFileLote("750-caixa10", parseGrupo750Termo2Lote)}
+              handleFileTermo1={handleFileLote("124-750", parseGrupo750Termo1Lote, parseGrupo750Termo1Unico)}
+              handleFileTermo2={handleFileLote("750-caixa10", parseGrupo750Termo2Lote, parseGrupo750Termo2Unico)}
               handleFileProdutos1464={handleFileProdutos1464}
               handleFileTrimestral={handleFileTrimestral} mesesTrimestral={Object.keys(dadosTrimestral)}
               handleFileClientes={handleFileClientes} mesesClientes={Object.keys(dadosClientes)} />
@@ -524,15 +576,15 @@ export default function App() {
             </p>
             <p style={{ color: T.textMuted, fontSize: 11, marginBottom: 4 }}><span style={{ color: T.leaf }}>■</span> ao vivo (importado) &nbsp; <span style={{ color: T.textSub }}>■</span> referência &nbsp; <span style={{ color: T.gold }}>■</span> lucratividade (%)</p>
             <p style={{ color: T.textMuted, fontSize: 11, marginBottom: 16 }}>💬 = comentário original da contabilidade sobre aquela conta.</p>
-            <DreHierarquica T={T} dreNodes={dreNodes} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} importedFlags={importedFlags} blocoVisivel={blocoVisivel} />
+            <DreHierarquica T={T} dreNodes={dreNodes} fatGerencial={fatGerencial} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} importedFlags={importedFlags} blocoVisivel={blocoVisivel} />
           </div>
         )}
-        {activeTab === "comparativo" && <ComparativoPeriodos T={T} dreNodes={dreNodes} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
-        {activeTab === "resumo" && <ResumoDoMes T={T} dreNodes={dreNodes} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
+        {activeTab === "comparativo" && <ComparativoPeriodos T={T} dreNodes={dreNodes} fatGerencial={fatGerencial} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
+        {activeTab === "resumo" && <ResumoDoMes T={T} dreNodes={dreNodes} fatGerencial={fatGerencial} meses={MESES} mesesLabel={MESES_LABEL} overrides={overrides} />}
         {activeTab === "reconciliacao" && (hasData ? <ReconciliacaoTab T={T} historico={historico} meses={MESES} /> : <EmptyState T={T} onGoImport={() => setActiveTab("import")} />)}
         {activeTab === "anomalias" && <AnomaliasTab T={T} dreNodes={dreNodes} meses={MESES} limiarPct={limiarPct} setLimiarPct={setLimiarPct} overrides={overrides} />}
-        {activeTab === "impostos" && <ImpostosTab T={T} dreNodes={dreNodes} meses={MESES} overrides={overrides} />}
-        {activeTab === "produtos" && <ProdutosTab T={T} historico={historico} overrides={overrides} />}
+        {activeTab === "impostos" && <ImpostosTab T={T} dreNodes={dreNodes} dre={dre} meses={MESES} overrides={overrides} />}
+        {activeTab === "produtos" && <ProdutosTab T={T} historico={historico} fatGerencialPorMes={fatGerencial} overrides={overrides} />}
         {activeTab === "clientes" && <ClientesTab T={T} dadosClientes={dadosClientes} />}
         {activeTab === "trimestral" && <AnaliseTrimestral T={T} dreNodes={dreNodes} meses={MESES} numeracaoLegada={numeracaoLegada} overrides={overrides} dadosImportados={dadosTrimestral} />}
         {activeTab === "rastreabilidade" && <RastreabilidadeTab T={T} />}
@@ -587,12 +639,12 @@ function TelaLogin({ T }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-function ImportTab({ T, historico, loading, handleFile2107, handleFilesGrupo222, handleFileTermo1, handleFileTermo2, handleFileProdutos1464, handleFileTrimestral, mesesTrimestral, handleFileClientes, mesesClientes }) {
+function ImportTab({ T, historico, loading, meses, onSalvarAjuste, handleFile2107, handleFilesGrupo222, handleFileTermo1, handleFileTermo2, handleFileProdutos1464, handleFileTrimestral, mesesTrimestral, handleFileClientes, mesesClientes }) {
   return (
     <div>
       <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Importar relatórios</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 24, maxWidth: 680 }}>
-        3 linhas já automatizadas (138, 209, 211) + Mix de Vendas (rotina 1464). As demais linhas da DRE usam valor de referência da auditoria manual até termos os imports de 2122/etc.
+        Com o script semanal do Winthor rodando, a DRE contábil, o Faturamento Gerencial, os Grupos 222 e 750, as Notas Técnicas, o Faturamento por Cliente e o Mix de Vendas chegam sozinhos; os imports abaixo servem de contingência. Só os Descontos Concedidos (linha 138) ainda dependem destes imports.
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(270px, 1fr))", gap: 14 }}>
         <ImportCard T={T} nome="Descontos Concedidos" desc="Lançamentos de desconto do mês (Rotina 2107), cruzados com a data do título original (Rotina 1008) para identificar o que é despesa do próprio mês e o que é reversão de um mês anterior. Alimenta a linha de Descontos Concedidos da DRE." badge="AUTOMÁTICO" badgeColor={T.leaf} meses={Object.keys(historico["2107"] || {})} loading={loading === "2107"}>
@@ -601,10 +653,10 @@ function ImportTab({ T, historico, loading, handleFile2107, handleFilesGrupo222,
         <ImportCard T={T} nome="Grupo 222" desc="Extrato de despesas do Grupo 222 (Rotina 750), já filtrado pela contabilidade. Pode subir mais de um arquivo de uma vez — o sistema detecta o mês de cada um automaticamente pelas datas dentro dele. Alimenta o ajuste gerencial de Despesas Grupo 222." badge="AUTOMÁTICO" badgeColor={T.leaf} meses={Object.keys(historico["750-222"] || {})} loading={loading === "750-222"}>
           <label style={botaoStyle(T, false)}>{loading === "750-222" ? "Processando…" : "📂 Carregar 1+ arquivos"}<input type="file" accept=".xlsx,.xls" multiple style={{ display: "none" }} onChange={handleFilesGrupo222} /></label>
         </ImportCard>
-        <ImportCard T={T} nome="Grupo 750 — Termo 1" desc="Relatório 124, com o total do Grupo 750 de cada mês (o arquivo já vem em lote, uma aba por mês). É a maior parte do ajuste gerencial de Grupo 750 — o Termo 2 completa o restante." badge="AUTOMÁTICO" badgeColor={T.leaf} meses={Object.keys(historico["124-750"] || {})} loading={loading === "124-750"}>
+        <ImportCard T={T} nome="Grupo 750 — Termo 1" desc="Relatório 124, com o total do Grupo 750 de cada mês (aceita o arquivo em lote, uma aba por mês, ou o de um único mês — nesse caso o sistema pergunta qual é o mês). É a maior parte do ajuste gerencial de Grupo 750 — o Termo 2 completa o restante." badge="AUTOMÁTICO" badgeColor={T.leaf} meses={Object.keys(historico["124-750"] || {})} loading={loading === "124-750"}>
           <label style={botaoStyle(T, false)}>{loading === "124-750" ? "Processando…" : "📂 Carregar em lote"}<input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleFileTermo1} /></label>
         </ImportCard>
-        <ImportCard T={T} nome="Grupo 750 — Termo 2 (Caixa 10)" desc="Extrato de tesouraria (grupos 538 e 750), com uma curadoria manual da contabilidade pra excluir aportes financeiros que não são despesa operacional — por isso o selo é parcial, não totalmente automático. Complementa o Termo 1 no mesmo ajuste." badge="MANUAL PARCIAL" badgeColor={T.warning} meses={Object.keys(historico["750-caixa10"] || {})} loading={loading === "750-caixa10"}>
+        <ImportCard T={T} nome="Grupo 750 — Termo 2 (Caixa 10)" desc="Extrato de tesouraria (grupos 538 e 750), com uma curadoria manual da contabilidade pra excluir aportes financeiros que não são despesa operacional — por isso o selo é parcial, não totalmente automático. Aceita lote ou um único mês (o mês é lido das datas). Complementa o Termo 1 no mesmo ajuste." badge="MANUAL PARCIAL" badgeColor={T.warning} meses={Object.keys(historico["750-caixa10"] || {})} loading={loading === "750-caixa10"}>
           <label style={botaoStyle(T, false)}>{loading === "750-caixa10" ? "Processando…" : "📂 Carregar em lote"}<input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleFileTermo2} /></label>
         </ImportCard>
         <ImportCard T={T} nome="Mix de Vendas" desc="Faturamento por produto/sabor (Rotina 1464) — um arquivo só, com todos os meses juntos na mesma aba. Alimenta a aba Mix de Vendas: quantidade vendida, preço médio e participação de cada categoria (Polpa, Açaí, Morango Congelado)." badge="AUTOMÁTICO" badgeColor={T.leaf} meses={Object.keys(historico["1464-produtos"] || {})} loading={loading === "1464-produtos"}>
@@ -616,10 +668,69 @@ function ImportTab({ T, historico, loading, handleFile2107, handleFilesGrupo222,
         <ImportCard T={T} nome="Faturamento por Cliente" desc="Faturamento por cliente (Rotina 1464) — uma aba por mês (janeiro, fevereiro...) no mesmo arquivo. Alimenta a aba Faturamento por Cliente: ranking, concentração e evolução dos maiores clientes." badge="AUTOMÁTICO" badgeColor={T.leaf} meses={mesesClientes || []} loading={loading === "clientes"}>
           <label style={botaoStyle(T, false)}>{loading === "clientes" ? "Processando…" : "📂 Carregar arquivo"}<input type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={handleFileClientes} /></label>
         </ImportCard>
+        <AjusteManualCard T={T} historico={historico} meses={meses || []} onSalvar={onSalvarAjuste} />
       </div>
     </div>
   );
 }
+// Aceita "1.234,56", "1234,56", "1234.56" e "-500". Vazio = 0. Inválido = NaN.
+function parseNumeroBR(txt) {
+  const t = String(txt ?? "").trim().replace(/\s/g, "");
+  if (t === "") return 0;
+  const normal = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
+  const n = Number(normal);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+// Ajuste manual do mês: o banco entrega Grupo 222 e Notas Técnicas pela regra
+// "vencimento 31/12"; a contabilidade às vezes marca linhas à mão ou faz ajustes
+// fora do extrato (manual de composição). O valor informado aqui é SOMADO ao do banco.
+function AjusteManualCard({ T, historico, meses, onSalvar }) {
+  const [mes, setMes] = useState("");
+  const [a222, setA222] = useState("");
+  const [aNT, setANT] = useState("");
+  const [a750, setA750] = useState("");
+  const [msg, setMsg] = useState("");
+  const salvos = historico["ajustes-gerenciais"] || {};
+  const formatar = (n) => String(n ?? 0).replace(".", ",");
+
+  function escolher(m) {
+    setMes(m); setMsg("");
+    if (!m) { setA222(""); setANT(""); setA750(""); return; }
+    const e = salvos[m]?.extra;
+    setA222(formatar(e?.ajuste222 ?? AJUSTES_SEED.grupo222[m] ?? 0));
+    setANT(formatar(e?.ajusteNT ?? AJUSTES_SEED.notasTecnicas[m] ?? 0));
+    setA750(formatar(e?.ajuste750 ?? AJUSTES_SEED.grupo750[m] ?? 0));
+  }
+  function salvar() {
+    const v222 = parseNumeroBR(a222), vNT = parseNumeroBR(aNT), v750 = parseNumeroBR(a750);
+    if (!mes || Number.isNaN(v222) || Number.isNaN(vNT) || Number.isNaN(v750)) { setMsg("Escolha o mês e informe valores numéricos (ex: 1.234,56 ou -500)."); return; }
+    onSalvar(mes, { ajuste222: v222, ajusteNT: vNT, ajuste750: v750 });
+    setMsg("Ajuste salvo.");
+  }
+  const campo = { width: "100%", boxSizing: "border-box", background: T.bg, color: T.text, border: `1px solid ${T.border}`, borderRadius: 6, padding: "6px 8px", fontSize: 12 };
+  const rotulo = { fontSize: 10, color: T.textMuted, fontWeight: 700, marginTop: 8, marginBottom: 3 };
+
+  return (
+    <ImportCard T={T} nome="Ajuste manual — Grupos 222, 750 e Notas Técnicas" desc="Valor somado ao que veio do banco (positivo soma, negativo reduz), conforme o manual de composição da contabilidade. Já vem preenchido com o histórico de jan a ago/2026." badge="MANUAL" badgeColor={T.warning} meses={Object.keys(salvos)} loading={false}>
+      <select value={mes} onChange={(e) => escolher(e.target.value)} style={campo}>
+        <option value="">Escolha o mês…</option>
+        {meses.map((m) => <option key={m} value={m}>{MESES_LABEL[m]}/{m.slice(0, 4)}</option>)}
+      </select>
+      <div style={rotulo}>AJUSTE NO GRUPO 222 (R$)</div>
+      <input value={a222} onChange={(e) => setA222(e.target.value)} placeholder="0" style={campo} />
+      <div style={rotulo}>AJUSTE NAS NOTAS TÉCNICAS (R$)</div>
+      <input value={aNT} onChange={(e) => setANT(e.target.value)} placeholder="0" style={campo} />
+      <div style={rotulo}>AJUSTE NO GRUPO 750 (R$)</div>
+      <input value={a750} onChange={(e) => setA750(e.target.value)} placeholder="0" style={campo} />
+      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={salvar} style={botaoStyle(T, true)}>Salvar ajuste</button>
+        {msg && <span style={{ fontSize: 11, color: T.textSub }}>{msg}</span>}
+      </div>
+    </ImportCard>
+  );
+}
+
 function ImportCard({ T, nome, desc, badge, badgeColor, meses, loading, children }) {
   return (
     <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 18 }}>
@@ -834,8 +945,9 @@ function fmtDelta(n) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-function ImpostosTab({ T, dreNodes, meses, overrides }) {
-  const linhas = useMemo(() => meses.map((mes) => calcularCargaTributaria(mes, dreNodes, overrides)), [dreNodes, meses, overrides]);
+function ImpostosTab({ T, dreNodes, dre, meses, overrides }) {
+  const dreDoMes = useMemo(() => Object.fromEntries(dre.map((d) => [d.mes, d])), [dre]);
+  const linhas = useMemo(() => meses.map((mes) => calcularCargaTributaria(mes, dreNodes, overrides, dreDoMes[mes])), [dreNodes, meses, overrides, dreDoMes]);
   return (
     <div>
       <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Receita × Lucro × Impostos</h1>
@@ -882,7 +994,7 @@ function ImpostosTab({ T, dreNodes, meses, overrides }) {
 const ALTURA_CABECALHO = 30;
 const ALTURA_DEPARTAMENTO = 30;
 
-function ProdutosTab({ T, historico, overrides }) {
+function ProdutosTab({ T, historico, fatGerencialPorMes, overrides }) {
   const dados1464 = historico["1464-produtos"] || {};
   const mesesDisponiveis = Object.keys(dados1464).sort();
   const [mesSelecionado, setMesSelecionado] = useState(mesesDisponiveis[mesesDisponiveis.length - 1] || null);
@@ -914,7 +1026,7 @@ function ProdutosTab({ T, historico, overrides }) {
       </div>
     );
   }
-  const fatGerencial = REF_SEED.faturamentoGerencial[mesSelecionado];
+  const fatGerencial = fatGerencialPorMes?.[mesSelecionado];
   const ticketMedio = calcularTicketMedio(fatGerencial, dadosMes.totalQuantidade);
   const lucratividadeGerencial = overrides?.[mesSelecionado]?.[214] != null ? overrides[mesSelecionado][214] * 100 : null;
   const lucratividadeContabil = overrides?.[mesSelecionado]?.[204] != null ? overrides[mesSelecionado][204] * 100 : null;

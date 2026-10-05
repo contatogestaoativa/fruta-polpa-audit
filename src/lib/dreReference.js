@@ -25,15 +25,27 @@
 // rodar pra um mês novo, esse mês aparece no sistema SEM eu precisar
 // editar este arquivo — é esse o objetivo de toda essa mudança.
 //
-// O QUE AINDA NÃO VEM DO BANCO (fica no SEED, documentado abaixo):
-//   - Easy Consultoria, NF Baixa Bacuri, Notas Técnicas, e as 3 linhas
-//     de Descontos Concedidos por competência (2025/2026/porComp) —
-//     são ajustes do bloco GERENCIAL, que a função do Winthor que
-//     automatizamos NÃO cobre (ela só gera o bloco CONTÁBIL, até
-//     "Resultado Líquido do Exercício"). Fica como pendência.
-//   - Faturamento Gerencial — vem de uma tabela diferente
-//     (FP_VENDA_LIQ), que o script já consulta mas ainda só usa pra
-//     VALIDAÇÃO, não grava no Supabase. Também fica pendência.
+// BLOCO GERENCIAL (atualizado em 05/10/2026):
+//   Vêm do banco, via rotina "banco-gerencial" gravada pelo script:
+//     - Faturamento Gerencial  (FP_VENDA_LIQ — 8 de 8 meses exatos)
+//     - Grupo 750 / 538 (linha 211): termo 1 = PCLANC grupo 750 por
+//       DTLANC, somado por conta, mantendo as contas com saldo de
+//       despesa; termo 2 = grupo 538, NUMBANCO 10, por DTPAGTO. Os dois
+//       termos bateram em 8 de 8 meses (exceção: julho usou o líquido
+//       do termo 1, ver regrasGerenciais.js).
+//     - Grupo 222 e Notas Técnicas (PCLANC, grupo de conta 222; NT =
+//       vencimento 31/12). A base bate com o extrato da Rotina 750; as
+//       diferenças que sobram em alguns meses são marcações/ajustes
+//       manuais da contabilidade. Por isso existe o AJUSTE MANUAL por
+//       mês (rotina "ajustes-gerenciais", preenchida na aba Importar);
+//       os de Jan-Ago/2026 estão em AJUSTES_SEED abaixo e reproduzem
+//       exatamente os valores validados antes.
+//   Ainda ficam no SEED (sem fonte no banco):
+//     - As 3 linhas de Descontos Concedidos (2025 / 2026 / por
+//       competência): memória na planilha APROPRIAÇÃO DESCONTOS.
+//   REMOVIDAS em 05/10/2026: "Easy Consultoria" (foi incorporada ao
+//   grupo 222) e "NF Baixa Bacuri" (não ocorre mais) — autorizado pelo
+//   Sr. Leonardo, conforme o Pedro; estavam zeradas em todo 2026.
 //
 // IMPORTANTE — fórmula do bloco gerencial confirmada com a
 // contabilidade em 20/08 e 18/09 (isso não mudou):
@@ -48,6 +60,7 @@
 
 import { fechamentosNoMes } from "./fechamentos.js";
 import { DRE_NODES as DRE_NODES_SEED } from "./dreNodes.js";
+import { MESES_COM_SUBTOTAL_LIQUIDO } from "./regrasGerenciais.js";
 
 // Reexportado de propósito: `dreNodes === DRE_NODES_SEED` (igualdade de
 // referência) é como outros arquivos detectam se a numeração de linha
@@ -71,8 +84,6 @@ export const MESES_LABEL = new Proxy({}, { get: (_, mes) => NOME_MES[String(mes)
 // meses, esses números vão sendo cada vez menos necessários.
 // ═══════════════════════════════════════════════════════════════════
 export const REF_SEED = {
-  easy: { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 0, "2026-06": 0, "2026-07": 0, "2026-08": 0 },
-  nfBaixaBacuri: { "2026-01": 0, "2026-02": 0, "2026-03": 0, "2026-04": 0, "2026-05": 0, "2026-06": 0, "2026-07": 0, "2026-08": 0 },
   // "NF Posto" foi renomeado para "Notas Técnicas" pela contabilidade em Agosto — mesmo conceito, mesmo tratamento.
   nfPosto: { "2026-01": 238300.64, "2026-02": 222731.45, "2026-03": 502353.24, "2026-04": 10441.52, "2026-05": 292894.06, "2026-06": 443041.87, "2026-07": 313540.55, "2026-08": 489669.06 },
   descontosConcedidos2025: { "2026-01": 263125.49, "2026-02": 203347.5, "2026-03": 25679.96, "2026-04": 6815.49, "2026-05": 894981.67, "2026-06": 85142.5, "2026-07": 93180.61, "2026-08": 0 },
@@ -85,6 +96,47 @@ export const REF_SEED = {
   // dinamicamente a partir de lá (ver `resolverDepreciacao`/`resolverDescontosConcedidos`).
   depreciacao: { "2026-01": 335595.53, "2026-02": 337373.07, "2026-03": 337560.35, "2026-04": 338692.11, "2026-05": 339250.17, "2026-06": 345606.39, "2026-07": 423172.9, "2026-08": 424631.25 },
 };
+
+// Ajustes manuais (sistema validado menos o valor do banco) por mês — fazem
+// o dado do banco reproduzir exatamente o que foi validado em Jan-Ago/2026.
+// De setembro em diante o ajuste, quando houver, é informado na aba
+// Importar (rotina "ajustes-gerenciais") e passa a valer no lugar daqui.
+export const AJUSTES_SEED = {
+  grupo222:      { "2026-05": 1008.0, "2026-07": -6046.4 },
+  notasTecnicas: { "2026-01": 6611.14, "2026-02": 8.0, "2026-05": 2279.84, "2026-06": 782.52, "2026-07": 6046.4 },
+  grupo750:      { "2026-07": 1.0 }, // o líquido do relatório 124 em julho tem R$ 1,00 a mais que o banco
+};
+
+/**
+ * Bloco gerencial de um mês a partir do que o script gravou no Supabase.
+ * @param mes       "2026-08"
+ * @param banco     historico["banco-gerencial"]?.[mes]?.extra  (ou undefined)
+ * @param ajuste    historico["ajustes-gerenciais"]?.[mes]?.extra (ou undefined)
+ * @returns null se o mês ainda não tem dado do banco; senão
+ *          { faturamentoGerencial, grupo222, notasTecnicas, ajuste222, ajusteNT,
+ *            grupo750Termo1, grupo750Termo2, grupo750, ajuste750 }
+ *          com grupo222/notasTecnicas/grupo750 JÁ somados ao ajuste manual.
+ *          grupo750* ficam undefined se o script ainda não gravou esses campos.
+ */
+export function gerencialDoBanco(mes, banco, ajuste) {
+  if (!banco || typeof banco.faturamentoGerencial !== "number") return null;
+  const ajuste222 = ajuste?.ajuste222 ?? AJUSTES_SEED.grupo222[mes] ?? 0;
+  const ajusteNT = ajuste?.ajusteNT ?? AJUSTES_SEED.notasTecnicas[mes] ?? 0;
+  const ajuste750 = ajuste?.ajuste750 ?? AJUSTES_SEED.grupo750[mes] ?? 0;
+
+  // Grupo 750 = termo 1 (primeiro subtotal, ou o líquido nos meses de exceção) + termo 2 (538, caixa 10)
+  const temG750 = ["grupo750Despesas", "grupo750Liquido", "grupo538Caixa10"].every((k) => typeof banco[k] === "number");
+  const grupo750Termo1 = temG750 ? (MESES_COM_SUBTOTAL_LIQUIDO.includes(mes) ? banco.grupo750Liquido : banco.grupo750Despesas) : undefined;
+  const grupo750Termo2 = temG750 ? banco.grupo538Caixa10 : undefined;
+  return {
+    faturamentoGerencial: banco.faturamentoGerencial,
+    grupo222: round2((banco.grupo222 || 0) + ajuste222),
+    notasTecnicas: round2((banco.notasTecnicas || 0) + ajusteNT),
+    ajuste222, ajusteNT, ajuste750,
+    grupo750Termo1, grupo750Termo2,
+    grupo750: temG750 ? round2(grupo750Termo1 + grupo750Termo2 + ajuste750) : undefined,
+  };
+}
 
 export const OFICIAL_SEED = {
   // Regime de caixa/bruto (decisão de 18/09, pra bater com a linha 199
@@ -230,7 +282,7 @@ function resolverDepreciacao(dreNodes, mes) {
  * do 2107 — regime de competência, feito pela tela — ele substitui
  * esse bruto e a conta é recalculada a partir daí).
  */
-export function montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211 } = {}) {
+export function montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211, nfPosto: nfPostoEntrada, faturamentoGerencial: faturamentoEntrada } = {}) {
   const buscar = (criterio) => {
     const row = localizarLinha(dreNodes, criterio);
     return row ? dreNodes.find((n) => n.row === row)?.values[mes] : undefined;
@@ -256,18 +308,19 @@ export function montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211 } =
   const provisaoCsll = buscar({ contem: "PROVISÃO PARA CSLL", nivel: 0 }) ?? buscar({ contem: "PROVISAO PARA CSLL", nivel: 0 }) ?? 0;
   const resultadoLiquido = round2(resultadoAntesCsll + provisaoCsll);
 
+  // Ordem de prioridade: import manual na tela > dado do banco (+ ajuste) > seed.
   const l209 = linha209 ?? OFICIAL_SEED["209"][mes] ?? 0;
   const l211 = linha211 ?? OFICIAL_SEED["211"][mes] ?? 0;
   const depreciacao = resolverDepreciacao(dreNodes, mes);
-  const easy = REF_SEED.easy[mes] ?? 0, nfBaixaBacuri = REF_SEED.nfBaixaBacuri[mes] ?? 0, nfPosto = REF_SEED.nfPosto[mes] ?? 0;
+  const nfPosto = nfPostoEntrada ?? REF_SEED.nfPosto[mes] ?? 0; // "Notas Técnicas" (antes NF Posto)
   const descontos2025 = REF_SEED.descontosConcedidos2025[mes] || 0;
   const descontos2026 = REF_SEED.descontosConcedidos2026[mes] || 0;
   const descontosPorComp = REF_SEED.descontosConcedidosPorComp[mes] || 0;
-  const ajustesGerenciais = round2(depreciacao + easy + nfBaixaBacuri + l209 + nfPosto - l211 + descontos2025 + descontos2026 + descontosPorComp);
+  const ajustesGerenciais = round2(depreciacao + l209 + nfPosto - l211 + descontos2025 + descontos2026 + descontosPorComp);
   const lucroOperacionalGerencial = round2(lucroOperacionalContabil + ajustesGerenciais);
   const lucroComSubvencoes = round2(resultadoLiquido + ajustesGerenciais);
 
-  const faturamentoGerencial = REF_SEED.faturamentoGerencial[mes];
+  const faturamentoGerencial = faturamentoEntrada ?? REF_SEED.faturamentoGerencial[mes];
   const lucratividadeContabil = faturamentoGerencial ? round2((lucroOperacionalContabil / faturamentoGerencial) * 10000) / 100 : null;
   const lucratividadeGerencial = receitaBruta ? round2((lucroOperacionalGerencial / receitaBruta) * 10000) / 100 : null;
   const lucratividadeComSubvencoes = faturamentoGerencial ? round2((lucroComSubvencoes / faturamentoGerencial) * 10000) / 100 : null;
@@ -275,7 +328,8 @@ export function montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211 } =
   return {
     mes, receitaBruta, deducoes, receitaLiquida, cpv, lucroBruto, despesasOperacionais, receitasOperacionais,
     lucroOperacionalContabil, receitasNaoOperacionais, resultadoAntesCsll, provisaoCsll, resultadoLiquido,
-    depreciacao, easy, nfBaixaBacuri, linha209: l209, nfPosto, linha211: l211,
+    depreciacao, linha209: l209, nfPosto, linha211: l211,
+    descontos2025, descontos2026, descontosPorComp,
     lucroOperacionalGerencial, lucroComSubvencoes, linha138: l138,
     faturamentoGerencial, lucratividadeContabil, lucratividadeGerencial, lucratividadeComSubvencoes,
   };
@@ -284,7 +338,13 @@ export function montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211 } =
 // ═══════════════════════════════════════════════════════════════════
 // MÓDULO — RECEITA x LUCRO x CARGA TRIBUTÁRIA
 // ═══════════════════════════════════════════════════════════════════
-export function calcularCargaTributaria(mes, dreNodes, overrides) {
+/**
+ * @param dreDoMes  resultado de montarDreDoMes para este mês, já com os
+ *   imports/dado do banco aplicados (o App calcula isso uma vez só). Antes
+ *   esta função procurava os overrides pelos números de linha fixos
+ *   138/209/211, que deixaram de valer com a numeração dinâmica da DRE.
+ */
+export function calcularCargaTributaria(mes, dreNodes, overrides, dreDoMes) {
   const porRow = {};
   for (const n of dreNodes) porRow[n.row] = n;
 
@@ -298,9 +358,7 @@ export function calcularCargaTributaria(mes, dreNodes, overrides) {
   const linhasImposto = [rowIcms, rowPis, rowCofins, rowDespTrib, rowProvisao].filter((r) => r !== null);
   const receita = getValorNode(porRow[rowReceitaBruta], mes, overrides);
   const impostos = linhasImposto.reduce((s, row) => s + Math.abs(getValorNode(porRow[row], mes, overrides) || 0), 0);
-  const dre = montarDreDoMes(mes, dreNodes, {
-    linha138: overrides?.[mes]?.[138], linha209: overrides?.[mes]?.[209], linha211: overrides?.[mes]?.[211],
-  });
+  const dre = dreDoMes ?? montarDreDoMes(mes, dreNodes);
   const lucro = dre.lucroComSubvencoes;
 
   return {

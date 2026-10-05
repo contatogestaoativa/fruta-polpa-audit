@@ -119,3 +119,15 @@ export function parseDescontosConcedidosCompetenciaPura(rows) {
   }
   return resultado;
 }
+
+/**
+ * Escolhe a aba do arquivo que tem os lançamentos do 2107. Alguns arquivos trazem antes uma
+ * tabela dinâmica ("DINÂMICA") e depois a base da rotina 1008, que tem dezenas de milhares de
+ * linhas; ler a primeira aba às cegas importava a tabela dinâmica (nada) e ler todas travava.
+ */
+export function escolherAba2107(nomes) {
+  const limpo = nomes.map((n) => ({ n, u: n.trim().toUpperCase() }));
+  return (limpo.find((x) => x.u.startsWith("2107"))
+    || limpo.find((x) => !/^(DIN[AÂ]MICA|1008)/.test(x.u))
+    || limpo[0]).n;
+}

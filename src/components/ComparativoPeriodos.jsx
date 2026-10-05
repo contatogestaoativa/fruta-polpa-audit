@@ -1,5 +1,5 @@
 import { useState, useMemo, Fragment } from "react";
-import { getValorNode, REF_SEED, localizarLinha } from "../lib/dreReference.js";
+import { getValorNode, localizarLinha } from "../lib/dreReference.js";
 import { fechamentosNoMes, fechamentosNoPeriodo } from "../lib/fechamentos.js";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -90,7 +90,7 @@ function intervalo(meses, de, ate) {
   return i <= j ? meses.slice(i, j + 1) : meses.slice(j, i + 1);
 }
 
-export default function ComparativoPeriodos({ T, dreNodes, meses, mesesLabel, overrides }) {
+export default function ComparativoPeriodos({ T, dreNodes, fatGerencial, meses, mesesLabel, overrides }) {
   const { ROW_FATURAMENTO_GERENCIAL, ROW_RECEITA_BRUTA, PCT_ROWS, PCT_PARA_LINHA_MONEY, LINHAS_RESULTADO } = useMemo(() => resolverRows(dreNodes), [dreNodes]);
   const secoes = useMemo(() => agruparSecoes(dreNodes), [dreNodes]);
   const porRow = useMemo(() => Object.fromEntries(dreNodes.map((n) => [n.row, n])), [dreNodes]);
@@ -137,7 +137,7 @@ export default function ComparativoPeriodos({ T, dreNodes, meses, mesesLabel, ov
     if (!lista.length) return null;
     if (PCT_ROWS.has(node.row)) {
       const moneyRow = porRow[PCT_PARA_LINHA_MONEY[node.row]];
-      const fat = lista.reduce((s, m) => s + (REF_SEED.faturamentoGerencial[m] || 0), 0);
+      const fat = lista.reduce((s, m) => s + (fatGerencial?.[m] || 0), 0);
       if (!moneyRow || !fat) return null;
       return somaBruta(moneyRow, lista) / fat;
     }
@@ -148,7 +148,7 @@ export default function ComparativoPeriodos({ T, dreNodes, meses, mesesLabel, ov
     if (PCT_ROWS.has(node.row) || !lista.length) return null;
     const baseVertical = node.row < ROW_FATURAMENTO_GERENCIAL
       ? lista.reduce((s, m) => s + (getValorNode(porRow[ROW_RECEITA_BRUTA], m, overrides) || 0), 0)
-      : lista.reduce((s, m) => s + (REF_SEED.faturamentoGerencial[m] || 0), 0);
+      : lista.reduce((s, m) => s + (fatGerencial?.[m] || 0), 0);
     if (!baseVertical) return null;
     return (somaBruta(node, lista) / baseVertical) * 100;
   }

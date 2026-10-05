@@ -8,7 +8,7 @@ import AnaliseTrimestral from "./components/AnaliseTrimestral.jsx";
 import ComparativoPeriodos from "./components/ComparativoPeriodos.jsx";
 import ResumoDoMes from "./components/ResumoDoMes.jsx";
 import { parseAnaliseTrimestral, ehArquivoAnaliseTrimestral } from "./lib/parsers/analiseTrimestral.js";
-import { parseDescontosConcedidos, detectarNotasDuplicadas, parseDescontosConcedidosCompetenciaPura } from "./lib/parsers/descontosConcedidos.js";
+import { parseDescontosConcedidos, detectarNotasDuplicadas, parseDescontosConcedidosCompetenciaPura, escolherAba2107 } from "./lib/parsers/descontosConcedidos.js";
 import { parseGrupo222, detectarMesPredominante } from "./lib/parsers/grupo222.js";
 import { parseGrupo750Termo1Lote, parseGrupo750Termo2Lote, parseGrupo750Termo1Unico, parseGrupo750Termo2Unico, ehLoteMultiMes } from "./lib/parsers/grupo750.js";
 import { parseProdutos1464, calcularTicketMedio } from "./lib/parsers/produtos1464.js";
@@ -230,9 +230,15 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
-        const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+        // Lê só a aba do 2107 (o arquivo pode trazer tabela dinâmica e a base 1008, enorme, junto).
+        const nomesAbas = XLSX.read(ev.target.result, { type: "array", bookSheets: true }).SheetNames;
+        const aba = escolherAba2107(nomesAbas);
+        const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true, sheets: aba });
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[aba]);
         const serieMensal = parseDescontosConcedidos(rows);
+        if (serieMensal.length === 0) {
+          alert(`Não encontrei lançamentos do 2107 neste arquivo (aba lida: "${aba}"). Confira se ele tem as colunas NOTA, DATA, VALOR e DATA 1008.`);
+        }
         const duplicadas = detectarNotasDuplicadas(rows);
         const competenciaCompleta = parseDescontosConcedidosCompetenciaPura(rows);
         serieMensal.forEach((l) => gravar("2107", l.mes, file.name, l.saldoCompetencia, {

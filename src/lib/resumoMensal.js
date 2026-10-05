@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// RESUMO DE RESULTADO MENSAL (atualizado Ingrid, 03/10/2026)
+// RESUMO DE RESULTADO MENSAL (demanda Gerson, 01/09/2026)
 //
 // Compara o mês selecionado contra a DRE MÉDIA do ano e explica, conta
 // por conta, por que as linhas de resultado ficaram acima ou abaixo
@@ -87,7 +87,7 @@ export function mediaDaLinha(node, janela, overrides, porRow, rows) {
   if (!janela.length) return null;
   if (rows.PCT_ROWS.has(node.row)) {
     const moneyRow = porRow[rows.PCT_PARA_LINHA_MONEY[node.row]];
-    const fat = janela.reduce((s, m) => s + (REF_SEED.faturamentoGerencial[m] || 0), 0);
+    const fat = janela.reduce((s, m) => s + (rows.fatGerencial?.[m] || 0), 0);
     if (!moneyRow || !fat) return null;
     return somaBruta(moneyRow, janela, overrides) / fat;
   }
@@ -179,8 +179,9 @@ function ehFolha(nodes, i) {
  * Resumo completo do mês. Devolve tudo já calculado — a IA só narra,
  * nunca inventa número.
  */
-export function calcularResumoDoMes({ dreNodes, mes, mesesFechados, overrides, incluirMesAnalisado = true, topN = 15 }) {
-  const rows = resolverRows(dreNodes);
+export function calcularResumoDoMes({ dreNodes, mes, mesesFechados, overrides, fatGerencial, incluirMesAnalisado = true, topN = 15 }) {
+  // fatGerencial: mapa mes -> Faturamento Gerencial (banco ou referência); sem ele, cai na referência fixa
+  const rows = { ...resolverRows(dreNodes), fatGerencial: fatGerencial || REF_SEED.faturamentoGerencial };
   const porRow = Object.fromEntries(dreNodes.map((n) => [n.row, n]));
   const janela = janelaDeReferencia(mesesFechados, mes, { incluirMesAnalisado });
 

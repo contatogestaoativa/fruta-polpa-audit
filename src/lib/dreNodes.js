@@ -3111,40 +3111,6 @@ export const DRE_NODES = [
   "total": true
  },
  {
-  "row": 211,
-  "level": 0,
-  "label": "EASY CONSULTORIA FINANCEIRA LTDA ( + )",
-  "conta": null,
-  "values": {
-   "2026-01": 0,
-   "2026-02": 0,
-   "2026-03": 0,
-   "2026-04": 0,
-   "2026-05": 0,
-   "2026-06": 0,
-   "2026-07": 0,
-   "2026-08": 0
-  },
-  "total": true
- },
- {
-  "row": 212,
-  "level": 0,
-  "label": "NF BAIXA BACURI ( + )",
-  "conta": null,
-  "values": {
-   "2026-01": 0,
-   "2026-02": 0,
-   "2026-03": 0,
-   "2026-04": 0,
-   "2026-05": 0,
-   "2026-06": 0,
-   "2026-07": 0,
-   "2026-08": 0
-  },
-  "total": true
- },
- {
   "row": 213,
   "level": 0,
   "label": "DESPESAS PRÉ-OPERACIONAIS GRUPO 222 ( + )",

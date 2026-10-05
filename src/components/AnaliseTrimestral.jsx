@@ -116,7 +116,7 @@ export default function AnaliseTrimestral({ T, dreNodes, meses, numeracaoLegada,
           </thead>
           <tbody>
             {secoes.map((sec) => (
-              <LinhaComFilhos key={sec.header.row} T={T} sec={sec} isExpanded={expandidas.has(sec.header.row)} toggle={toggle}
+              <LinhaComFilhos key={sec.header.row} T={T} sec={sec} meses={MESES_2026} isExpanded={expandidas.has(sec.header.row)} toggle={toggle}
                 valor2025={valor2025} valor2026={valor2026} />
             ))}
           </tbody>
@@ -140,7 +140,7 @@ function celulasMes(T, node, mes, valor2025, valor2026, destaque) {
   );
 }
 
-function LinhaComFilhos({ T, sec, isExpanded, toggle, valor2025, valor2026 }) {
+function LinhaComFilhos({ T, sec, meses, isExpanded, toggle, valor2025, valor2026 }) {
   const temFilhos = sec.children.length > 0;
   // trimestre = soma dos 3 meses (2025 e 2026 separadamente), var recalculada por cima da soma
   function trimestre(node, meses) {
@@ -163,7 +163,7 @@ function LinhaComFilhos({ T, sec, isExpanded, toggle, valor2025, valor2026 }) {
           {sec.header.label}
         </span>
       </td>
-      {MESES_2026.map((mes) => {
+      {meses.map((mes) => {
         const t = TRIMESTRES.find((tt) => tt.meses[tt.meses.length - 1] === mes);
         const el = celulasMes(T, sec.header, mes, valor2025, valor2026, false);
         if (!t) return <Fragment key={mes}>{el}</Fragment>;
@@ -191,7 +191,7 @@ function LinhaComFilhos({ T, sec, isExpanded, toggle, valor2025, valor2026 }) {
             <span style={{ fontSize: 9, color: T.textMuted, fontWeight: 700, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 4, padding: "1px 5px", marginRight: 4 }}>{child.row}</span>
             {child.label}
           </td>
-          {MESES_2026.map((mes) => {
+          {meses.map((mes) => {
             const t = TRIMESTRES.find((tt) => tt.meses[tt.meses.length - 1] === mes);
             const el = celulasMes(T, child, mes, valor2025, valor2026, false);
             if (!t) return <Fragment key={mes}>{el}</Fragment>;

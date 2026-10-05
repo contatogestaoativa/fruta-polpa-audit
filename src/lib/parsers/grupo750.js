@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { MESES_COM_SUBTOTAL_LIQUIDO } from "../regrasGerenciais.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // LINHA 211 — DESPESAS GRUPO 750
@@ -137,74 +138,98 @@ function extrairMesDaAba(nomeAba) {
  * recente, para decisão explícita — não escondemos a divergência.
  */
 export function parseGrupo750Termo1Lote(workbook) {
-  const XLSXUtil = XLSX.utils;
   const resultado = {};
-
   for (const nomeAba of workbook.SheetNames) {
     const mes = extrairMesDaAba(nomeAba);
     if (!mes) continue;
-    const ws = workbook.Sheets[nomeAba];
-    const rows = XLSXUtil.sheet_to_json(ws, { header: 1, defval: null });
-    if (!rows.length) continue;
-
-    const header = rows[0];
-    const idxValor = header.findIndex((h) => String(h).trim() === "Valor Realizado");
-    const idxFilial = 0;
-    if (idxValor === -1) continue;
-
-    const subtotais = [];
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      const filial = row[idxFilial];
-      const valor = row[idxValor];
-      if ((filial === null || filial === undefined) && typeof valor === "number") {
-        subtotais.push(round2(Math.abs(valor)));
-      }
-    }
-    if (subtotais.length === 0) continue;
-
-    resultado[mes] = {
-      subtotalBruto: subtotais[0],
-      totalLiquido: subtotais[subtotais.length - 1],
-      // valor "oficial" adotado historicamente até jun/2026 era o bruto;
-      // a partir de jul/2026 passou a ser o líquido — ver achado de auditoria.
-      valorHistoricoAdotado: mes <= "2026-06" ? subtotais[0] : subtotais[subtotais.length - 1],
-    };
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[nomeAba], { header: 1, defval: null });
+    const t = termo1DaAba(rows);
+    if (t) resultado[mes] = adotarTermo1(mes, t);
   }
   return resultado;
 }
 
 /**
  * TERMO 2 em lote — cada aba é um mês, mesma estrutura do extrato de
- * caixa (sem cabeçalho fixo de posição — localiza a coluna "VALOR" pelo
- * nome, soma tudo exceto a linha de total, que tem a coluna DATA vazia).
+ * caixa: localiza a coluna "VALOR" pelo nome e soma tudo exceto a linha
+ * de total, que tem a coluna DATA vazia.
  */
 export function parseGrupo750Termo2Lote(workbook) {
-  const XLSXUtil = XLSX.utils;
   const resultado = {};
-
   for (const nomeAba of workbook.SheetNames) {
     const mes = extrairMesDaAba(nomeAba);
     if (!mes) continue;
-    const ws = workbook.Sheets[nomeAba];
-    const rows = XLSXUtil.sheet_to_json(ws, { header: 1, defval: null });
-    if (!rows.length) continue;
-
-    const header = rows[0];
-    const idxValor = header.findIndex((h) => String(h).trim() === "VALOR");
-    const idxData = 0;
-    if (idxValor === -1) continue;
-
-    let total = 0;
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (row[idxData] === null || row[idxData] === undefined) continue; // linha de total
-      const valor = row[idxValor];
-      if (typeof valor === "number") total += valor;
-    }
-    resultado[mes] = { total: round2(Math.abs(total)) };
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[nomeAba], { header: 1, defval: null });
+    const t = termo2DaAba(rows);
+    if (t) resultado[mes] = { total: t.total };
   }
   return resultado;
+}
+
+// ─── ARQUIVO DE UM ÚNICO MÊS (entrega mensal do Pedro) ─────────────
+// O 124 do grupo 750 vem com uma aba só, sem data dentro — o mês tem de ser
+// informado. O extrato do 538/caixa 10 traz a DATA de cada lançamento, então
+// o mês é detectado sozinho (o mais frequente entre as datas).
+
+/** Termo 1 de um único mês. @param mes "AAAA-MM" informado por quem importa. */
+export function parseGrupo750Termo1Unico(workbook, mes) {
+  for (const nomeAba of workbook.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[nomeAba], { header: 1, defval: null });
+    const t = termo1DaAba(rows);
+    if (t) return { [mes]: adotarTermo1(mes, t) };
+  }
+  return {};
+}
+
+/** Termo 2 de um único mês; o mês vem das datas dos lançamentos. */
+export function parseGrupo750Termo2Unico(workbook) {
+  for (const nomeAba of workbook.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[nomeAba], { header: 1, defval: null });
+    const t = termo2DaAba(rows);
+    if (t && t.mesDetectado) return { [t.mesDetectado]: { total: t.total } };
+  }
+  return {};
+}
+
+// ─── leitura de UMA aba (usada pelo lote e pelo arquivo de um mês só) ───
+
+function termo1DaAba(rows) {
+  if (!rows.length) return null;
+  const idxValor = rows[0].findIndex((h) => String(h).trim() === "Valor Realizado");
+  if (idxValor === -1) return null;
+  const subtotais = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    const valor = row[idxValor];
+    // subtotal = linha sem Filial e com valor numérico
+    if ((row[0] === null || row[0] === undefined) && typeof valor === "number") subtotais.push(round2(Math.abs(valor)));
+  }
+  if (subtotais.length === 0) return null;
+  return { subtotalBruto: subtotais[0], totalLiquido: subtotais[subtotais.length - 1] };
+}
+
+function adotarTermo1(mes, t) {
+  return { ...t, valorHistoricoAdotado: MESES_COM_SUBTOTAL_LIQUIDO.includes(mes) ? t.totalLiquido : t.subtotalBruto };
+}
+
+function termo2DaAba(rows) {
+  if (!rows.length) return null;
+  const idxValor = rows[0].findIndex((h) => String(h).trim() === "VALOR");
+  if (idxValor === -1) return null;
+  let total = 0;
+  const lancamentosPorMes = {};
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (row[0] === null || row[0] === undefined) continue; // linha de total
+    if (typeof row[idxValor] === "number") total += row[idxValor];
+    const d = row[0] instanceof Date ? row[0] : new Date(row[0]);
+    if (!isNaN(d)) {
+      const chave = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      lancamentosPorMes[chave] = (lancamentosPorMes[chave] || 0) + 1;
+    }
+  }
+  const mesDetectado = Object.entries(lancamentosPorMes).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+  return { total: round2(Math.abs(total)), mesDetectado };
 }
 
 function round2(n) { return Math.round(n * 100) / 100; }

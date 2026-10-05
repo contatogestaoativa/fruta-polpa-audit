@@ -1,5 +1,5 @@
 import { useState, useMemo, Fragment } from "react";
-import { getValorNode, REF_SEED, localizarLinha } from "../lib/dreReference.js";
+import { getValorNode, localizarLinha } from "../lib/dreReference.js";
 import { fechamentosNoMes, fechamentosNoPeriodo } from "../lib/fechamentos.js";
 
 // Resolvidas por RÓTULO, não por número fixo — a DRE agora é montada
@@ -56,7 +56,7 @@ function agruparSecoes(nodes) {
   return secoes;
 }
 
-export default function DreHierarquica({ T, dreNodes, meses, mesesLabel, overrides, importedFlags, blocoVisivel = "ambos" }) {
+export default function DreHierarquica({ T, dreNodes, fatGerencial, meses, mesesLabel, overrides, importedFlags, blocoVisivel = "ambos" }) {
   const { ROW_FATURAMENTO_GERENCIAL, ROW_RECEITA_BRUTA, PCT_ROWS, PCT_PARA_LINHA_MONEY } = useMemo(() => resolverRows(dreNodes), [dreNodes]);
   const secoesTodas = useMemo(() => agruparSecoes(dreNodes), [dreNodes]);
   const secoes = useMemo(() => {
@@ -110,7 +110,7 @@ export default function DreHierarquica({ T, dreNodes, meses, mesesLabel, overrid
   // Total acumulado dos meses carregados (soma simples para valores em R$;
   // para linhas de % recalcula com base no acumulado da linha em R$
   // correspondente ÷ acumulado da base certa — nunca soma %).
-  const totalFatGerencial = useMemo(() => meses.reduce((s, m) => s + (REF_SEED.faturamentoGerencial[m] || 0), 0), [meses]);
+  const totalFatGerencial = useMemo(() => meses.reduce((s, m) => s + (fatGerencial?.[m] || 0), 0), [meses, fatGerencial]);
   const totalReceitaBruta = useMemo(() => meses.reduce((s, m) => s + (getValorNode(porRow[ROW_RECEITA_BRUTA], m, overrides) || 0), 0), [meses, porRow, ROW_RECEITA_BRUTA, overrides]);
   function somaBrutaDaLinha(node) {
     return meses.reduce((s, m) => s + (valorBruto(node, m) || 0), 0);

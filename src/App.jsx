@@ -57,6 +57,9 @@ function resolverRows(dreNodes) {
     descontos2026: localizarLinha(dreNodes, { contem: "DESCONTOS CONCEDIDOS 2026" }),
     descontosPorComp: localizarLinha(dreNodes, { contem: "DESCONTOS CONCEDIDOS POR COMP" }),
     notasTecnicas: localizarLinha(dreNodes, { contem: "NOTAS TÉCNICAS" }),
+    // espelhos de linhas da DRE contábil: Receitas Não Operacionais e Provisão para CSLL/IRPJ
+    valorSubvencoes: localizarLinha(dreNodes, { contem: "VALOR DAS SUBVENÇÕES" }),
+    csllIrpjGerencial: localizarLinha(dreNodes, { contem: "CSLL + IRPJ" }),
   };
 }
 
@@ -143,10 +146,11 @@ function calcularDrePorMes(historico, regime, dreNodes, MESES, ROW) {
       [ROW.receitaLiquida]: d.receitaLiquida, [ROW.lucroBruto]: d.lucroBruto, [ROW.despesasOperacionais]: d.despesasOperacionais,
       [ROW.descontosConcedidos]: d.linha138, [ROW.lucroOperacionalContabil]: d.lucroOperacionalContabil, [ROW.resultadoAntesCsll]: d.resultadoAntesCsll,
       [ROW.resultadoLiquido]: d.resultadoLiquido, [ROW.lucroOperacionalContabilGer]: d.lucroOperacionalContabil, [ROW.lucratividadeContabil]: d.lucratividadeContabil / 100,
-      [ROW.grupo222Gerencial]: d.linha209, [ROW.grupo750Gerencial]: d.linha211, [ROW.lucroOperacionalGerencial]: d.lucroOperacionalGerencial,
+      [ROW.grupo222Gerencial]: d.linha209, [ROW.grupo750Gerencial]: -d.linha211, [ROW.lucroOperacionalGerencial]: d.lucroOperacionalGerencial,
       [ROW.lucratividadeGerencial]: d.lucratividadeGerencial / 100, [ROW.lucroComSubvencoes]: d.lucroComSubvencoes, [ROW.lucratividadeComSubvencoes]: d.lucratividadeComSubvencoes / 100,
       [ROW.faturamentoGerencial]: d.faturamentoGerencial, [ROW.depreciacaoGerencial]: d.depreciacao, [ROW.notasTecnicas]: d.nfPosto,
       [ROW.descontos2025]: d.descontos2025, [ROW.descontos2026]: d.descontos2026, [ROW.descontosPorComp]: d.descontosPorComp,
+      [ROW.valorSubvencoes]: d.receitasNaoOperacionais, [ROW.csllIrpjGerencial]: d.provisaoCsll ? -d.provisaoCsll : 0, // no gerencial a provisão aparece com o sinal invertido
     };
     flagsAcc[mes] = { [ROW.descontosConcedidos]: Boolean(h138), [ROW.grupo222Gerencial]: Boolean(h209), [ROW.grupo750Gerencial]: Boolean(h211a || h211b) };
   });

@@ -164,7 +164,10 @@ export default function App() {
   const [historico, setHistorico] = useState({});
   const [loading, setLoading] = useState(null);
   const [limiarPct, setLimiarPct] = useState(20);
-  const [regime, setRegime] = useState("competencia");
+  // Padrão = Caixa, que é a base da planilha de lucratividade do Pedro: a DRE contábil mantém os descontos
+  // concedidos como lançados, e a reclassificação fica só no bloco gerencial (linhas de Descontos 2025/2026/por
+  // competência). Em "Competência" a linha 138 é trocada pelo valor reclassificado e o contábil deixa de bater.
+  const [regime, setRegime] = useState("caixa");
   const [blocoVisivel, setBlocoVisivel] = useState("ambos"); // "ambos" | "contabil" | "gerencial"
   const [sidebarAberta, setSidebarAberta] = useState(true);
 
@@ -581,7 +584,9 @@ export default function App() {
                 ))}
               </div>
             </div>
-            <p style={{ color: T.textSub, fontSize: 12, marginBottom: 4 }}>Regime: <b style={{ color: T.text }}>{regime === "competencia" ? "Competência" : regime === "competencia-completa" ? "Competência Completa" : "Caixa"}</b> — afeta a linha 138. Demais linhas ainda não têm regra de caixa definida.
+            <p style={{ color: T.textSub, fontSize: 12, marginBottom: 4 }}>Regime: <b style={{ color: T.text }}>{regime === "competencia" ? "Competência" : regime === "competencia-completa" ? "Competência Completa" : "Caixa"}</b>{regime === "caixa"
+                ? " — base da planilha de lucratividade: a DRE contábil mantém os descontos concedidos como lançados; a reclassificação aparece só no bloco gerencial (Descontos 2025, 2026 e por competência)."
+                : " — reclassifica a linha 138 (Descontos Concedidos) por mês de origem; por isso Despesas Operacionais, Lucro Operacional da Contábil e as lucratividades diferem da planilha de lucratividade. Use Caixa para comparar com a planilha."}
               {regime === "competencia-completa" && <span style={{ color: T.warning }}> Abr e Mai têm diferença pontual de ~R$ 15.968,69 vs. a planilha da gestão — em apuração com a contabilidade.</span>}
             </p>
             <p style={{ color: T.textMuted, fontSize: 11, marginBottom: 4 }}><span style={{ color: T.leaf }}>■</span> ao vivo (importado) &nbsp; <span style={{ color: T.textSub }}>■</span> referência &nbsp; <span style={{ color: T.gold }}>■</span> lucratividade (%)</p>

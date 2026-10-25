@@ -37,12 +37,18 @@
       /* tela de acesso: entrada orquestrada (uma vez), brilho que cruza a logo e flutuação suave */
       @keyframes fp-entra { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
       .fp-entra { animation: fp-entra .9s cubic-bezier(.2,.7,.2,1) both; }
+      /* slogan numa linha só: o tamanho acompanha a largura da coluna da marca */
+      .fp-marca { container-type: inline-size; }
+      .fp-slogan { font-size: clamp(24px, 4vw, 56px); font-size: clamp(24px, 10.2cqw, 72px); }
+      /* grifo: o marca-texto é "passado" uma vez, da esquerda para a direita */
+      .fp-grifo { transform-origin: left center; animation: fp-grifar .95s cubic-bezier(.65,.05,.2,1) 1.1s both; transform: skewX(-7deg); }
+      @keyframes fp-grifar { from { transform: skewX(-7deg) scaleX(0); } to { transform: skewX(-7deg) scaleX(1); } }
       @keyframes fp-flutua { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
       .fp-flutua { animation: fp-flutua 7s ease-in-out infinite; }
       .fp-brilho { background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.6) 50%, transparent 62%); background-size: 260% 100%; background-position: 160% 0; animation: fp-brilho 6s ease-in-out 1.6s infinite; }
       @keyframes fp-brilho { 0% { background-position: 160% 0; } 30%, 100% { background-position: -60% 0; } }
       @media (max-width: 880px) { .fp-login-grid { grid-template-columns: 1fr !important; padding-top: 36px !important; } }
-      @media (prefers-reduced-motion: reduce) { .fp-luz, .fp-entra, .fp-flutua, .fp-brilho { animation: none; } * { transition: none !important; } }
+      @media (prefers-reduced-motion: reduce) { .fp-luz, .fp-entra, .fp-flutua, .fp-brilho, .fp-grifo { animation: none; } * { transition: none !important; } }
     </style>
   </head>
   <body>

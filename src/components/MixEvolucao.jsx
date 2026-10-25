@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { DEPARTAMENTOS, LABEL_DEPARTAMENTO, classificarDepartamento, ordenarPorDescricao } from "../lib/departamentos.js";
 import { MESES_LABEL } from "../lib/dreReference.js";
+import { glass } from "../theme.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // EVOLUÇÃO DO MIX — gráfico de linha, uma linha por sabor
@@ -203,8 +204,8 @@ export default function MixEvolucao({ T, dados1464 }) {
   });
 
   return (
-    <div style={{ marginTop: 32, border: `1px solid ${T.border}`, borderRadius: 10, background: T.card, padding: 18 }}>
-      <h2 style={{ fontFamily: T.fontDisplay, fontSize: 19, fontWeight: 700, margin: 0 }}>Evolução por sabor</h2>
+    <div style={{ marginTop: 32, ...glass(T), padding: 18 }}>
+      <h2 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 19, fontWeight: 700, margin: 0 }}>Evolução por sabor</h2>
       <p style={{ color: T.textSub, fontSize: 12, margin: "6px 0 16px", maxWidth: 700 }}>
         Uma linha por sabor ao longo dos meses importados. Escolha o indicador, filtre por categoria e marque os sabores.
         Cada sabor tem cor, <b>forma de marcador</b> e <b>tipo de traço</b> próprios — a leitura não depende de enxergar a cor.

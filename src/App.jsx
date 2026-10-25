@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef, Component } from "react";
 import * as XLSX from "xlsx";
-import { THEMES } from "./theme.js";
+import { THEMES, glass } from "./theme.js";
 import { Logo } from "./components/Logo.jsx";
 import { AnomalyBadge, StatCard } from "./components/AnomalyBadge.jsx";
 import DreHierarquica from "./components/DreHierarquica.jsx";
@@ -160,6 +160,10 @@ function calcularDrePorMes(historico, regime, dreNodes, MESES, ROW) {
 export default function App() {
   const [tema, setTema] = useState("dark");
   const T = THEMES[tema];
+  useEffect(() => {
+    document.documentElement.dataset.tema = tema;
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", T.bg);
+  }, [tema, T.bg]);
   const [activeTab, setActiveTab] = useState("import");
   const [historico, setHistorico] = useState({});
   const [loading, setLoading] = useState(null);
@@ -169,7 +173,7 @@ export default function App() {
   // competência). Em "Competência" a linha 138 é trocada pelo valor reclassificado e o contábil deixa de bater.
   const [regime, setRegime] = useState("caixa");
   const [blocoVisivel, setBlocoVisivel] = useState("ambos"); // "ambos" | "contabil" | "gerencial"
-  const [sidebarAberta, setSidebarAberta] = useState(true);
+  const [sidebarAberta, setSidebarAberta] = useState(() => typeof window === "undefined" || window.innerWidth >= 900);
 
   // ── Autenticação ──
   const [authLoading, setAuthLoading] = useState(persistenceEnabled);
@@ -485,16 +489,16 @@ export default function App() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", background: T.bg, color: T.text, fontFamily: T.fontBody, transition: "background .15s, color .15s" }}>
+    <div style={{ minHeight: "100vh", display: "flex", position: "relative", background: T.bg, color: T.text, fontFamily: T.fontBody, transition: "background .15s, color .15s" }}>
 
       {/* ── BARRA LATERAL (recolhível, tipo Claude) ── */}
       <aside style={{
         width: sidebarAberta ? 232 : 60, flexShrink: 0, transition: "width .18s ease",
-        background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column",
+        background: `linear-gradient(180deg, ${T.primaryDim} 0%, transparent 240px), ${T.surface}`, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column",
         position: "sticky", top: 0, height: "100vh", overflow: "hidden", zIndex: 1000,
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: sidebarAberta ? "space-between" : "center", padding: "14px 12px", borderBottom: `1px solid ${T.border}`, minHeight: 60, boxSizing: "border-box" }}>
-          {sidebarAberta && <Logo T={T} height={28} showText={false} />}
+          {sidebarAberta && <Logo T={T} height={30} />}
           <button onClick={() => setSidebarAberta((v) => !v)} title={sidebarAberta ? "Recolher menu" : "Expandir menu"}
             style={{ background: "transparent", border: `1px solid ${T.borderHi}`, borderRadius: 6, width: 28, height: 28, color: T.textSub, cursor: "pointer", fontSize: 13, flexShrink: 0 }}>
             {sidebarAberta ? "«" : "»"}
@@ -506,12 +510,13 @@ export default function App() {
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} title={!sidebarAberta ? tab.label : undefined}
               style={{
                 display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", marginBottom: 2,
-                borderRadius: 8, border: "none", cursor: "pointer", textAlign: "left",
+                borderRadius: T.rCtl, border: activeTab === tab.id ? `1px solid ${T.glassBorder}` : "1px solid transparent", cursor: "pointer", textAlign: "left",
                 background: activeTab === tab.id ? T.primaryDim : "transparent",
-                color: activeTab === tab.id ? T.primary : T.textSub, fontWeight: activeTab === tab.id ? 700 : 500, fontSize: 13,
+                boxShadow: activeTab === tab.id ? `0 0 22px -8px ${T.primary}` : "none",
+                color: activeTab === tab.id ? T.primaryText : T.textSub, fontWeight: activeTab === tab.id ? 700 : 500, fontSize: 13,
                 justifyContent: sidebarAberta ? "flex-start" : "center",
               }}>
-              <span style={{ fontSize: 15, flexShrink: 0 }}>{tab.icon}</span>
+              <span style={{ fontSize: 15, flexShrink: 0, filter: activeTab === tab.id ? "grayscale(1) sepia(1) saturate(7) hue-rotate(-14deg) brightness(1.15)" : "grayscale(1)", opacity: activeTab === tab.id ? 1 : 0.65 }}>{tab.icon}</span>
               {sidebarAberta && <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{tab.label}</span>}
             </button>
           ))}
@@ -519,13 +524,14 @@ export default function App() {
       </aside>
 
       {/* ── ÁREA PRINCIPAL ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <div ref={refTopo} style={{ background: T.surface, borderBottom: `1px solid ${T.border}`, padding: "0 20px", minHeight: 60, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, flexWrap: "wrap", position: "sticky", top: 0, zIndex: 900, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, position: "relative" }}>
+        <Cenario T={T} />
+        <div ref={refTopo} style={{ background: T.headerGlass, backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", borderBottom: `1px solid ${T.border}`, padding: "0 20px", minHeight: 60, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, flexWrap: "wrap", position: "sticky", top: 0, zIndex: 900 }}>
           <div style={{ display: "flex", background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2, flexShrink: 0 }}>
             {["competencia", "competencia-completa", "caixa"].map((r) => (
               <button key={r} onClick={() => setRegime(r)}
                 title={r === "competencia-completa" ? "Reatribui cada título ao mês de competência real (não só ano anterior). Validado contra a planilha da gestão em 5 de 7 meses; Abr e Mai têm uma diferença pontual de ~R$ 15.968,69 ainda em apuração." : undefined}
-                style={{ border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", background: regime === r ? T.primary : "transparent", color: regime === r ? "#fff" : T.textSub }}>
+                style={{ border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", background: regime === r ? T.gradient : "transparent", color: regime === r ? T.onPrimary : T.textSub }}>
                 {r === "competencia" ? "Competência" : r === "competencia-completa" ? "Competência Completa" : "Caixa"}
               </button>
             ))}
@@ -544,7 +550,7 @@ export default function App() {
           </span>
         </div>
 
-      <div style={{ padding: "24px 28px", maxWidth: 1280, margin: "0 auto", width: "100%" }}>
+      <div style={{ padding: "28px 32px", maxWidth: 1280, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
       {falhaPersistencia && (
         <div role="alert" style={{ border: `1px solid ${T.warning}`, background: T.warning + "1E", borderRadius: 8, padding: "12px 14px", marginBottom: 18, fontSize: 12, color: T.text, display: "flex", gap: 10, alignItems: "flex-start" }}>
           <b style={{ whiteSpace: "nowrap" }}>⚠ NÃO SALVO</b>
@@ -575,10 +581,10 @@ export default function App() {
         {activeTab === "dre" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 4 }}>
-              <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700 }}>DRE — {MESES_LABEL[MESES[0]]} a {MESES_LABEL[MESES[MESES.length - 1]]}/2026</h1>
+              <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700 }}>DRE — {MESES_LABEL[MESES[0]]} a {MESES_LABEL[MESES[MESES.length - 1]]}/2026</h1>
               <div style={{ display: "flex", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2 }}>
                 {[["ambos", "Ambos"], ["contabil", "Só Contábil"], ["gerencial", "Só Gerencial"]].map(([v, label]) => (
-                  <button key={v} onClick={() => setBlocoVisivel(v)} style={{ border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", background: blocoVisivel === v ? T.primary : "transparent", color: blocoVisivel === v ? "#fff" : T.textSub }}>
+                  <button key={v} onClick={() => setBlocoVisivel(v)} style={{ border: "none", borderRadius: 18, padding: "6px 14px", fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: "pointer", whiteSpace: "nowrap", background: blocoVisivel === v ? T.gradient : "transparent", color: blocoVisivel === v ? T.onPrimary : T.textSub }}>
                     {label}
                   </button>
                 ))}
@@ -616,6 +622,25 @@ export default function App() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Cenário: o momento memorável da identidade. Um feixe de luz laranja cai do
+// topo, com grade de pontos que se dissolve e o nome da marca gigante e quase
+// invisível ao fundo. Decorativo: fica atrás do conteúdo e não recebe clique.
+function Cenario({ T, altura = 560, palavra = "Fruta Polpa" }) {
+  const dissolver = "linear-gradient(180deg, #000 0%, transparent 85%)";
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0, height: altura, overflow: "hidden", pointerEvents: "none", zIndex: 0, WebkitMaskImage: "linear-gradient(180deg, #000 68%, transparent 100%)", maskImage: "linear-gradient(180deg, #000 68%, transparent 100%)" }}>
+      <div className="fp-luz" style={{ position: "absolute", inset: 0 }}>
+        <div style={{ position: "absolute", inset: 0, background: T.beam }} />
+        <div style={{ position: "absolute", inset: 0, background: T.beamCore }} />
+        <div style={{ position: "absolute", inset: 0, backgroundImage: `radial-gradient(${T.dots} 1px, transparent 1.3px)`, backgroundSize: "10px 10px", WebkitMaskImage: dissolver, maskImage: dissolver }} />
+      </div>
+      <div style={{ position: "absolute", left: "50%", bottom: typeof altura === "number" ? -altura * 0.12 : "-6%", transform: "translateX(-50%)", whiteSpace: "nowrap", fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontWeight: 800, fontSize: "clamp(120px, 21vw, 300px)", lineHeight: 1, letterSpacing: "-0.04em", color: T.ghost, userSelect: "none" }}>
+        {palavra}
+      </div>
+    </div>
+  );
+}
+
 function TelaCarregando({ T }) {
   return <div style={{ minHeight: "100vh", background: T.bg, color: T.textSub, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.fontBody }}>Carregando…</div>;
 }
@@ -635,17 +660,18 @@ function TelaLogin({ T }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: T.fontBody, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <form onSubmit={handleSubmit} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 32, width: 320 }}>
+    <div style={{ minHeight: "100vh", position: "relative", overflow: "hidden", background: T.bg, color: T.text, fontFamily: T.fontBody, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <Cenario T={T} altura="100%" />
+      <form onSubmit={handleSubmit} style={{ ...glass(T), position: "relative", zIndex: 1, padding: 32, width: 340 }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}><Logo T={T} height={40} /></div>
         <label style={{ fontSize: 12, color: T.textSub, display: "block", marginBottom: 6 }}>E-mail</label>
         <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-          style={{ width: "100%", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "8px 10px", marginBottom: 14, boxSizing: "border-box" }} />
+          style={{ width: "100%", background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: T.rCtl, color: T.text, padding: "10px 12px", marginBottom: 14, boxSizing: "border-box" }} />
         <label style={{ fontSize: 12, color: T.textSub, display: "block", marginBottom: 6 }}>Senha</label>
         <input type="password" required value={senha} onChange={(e) => setSenha(e.target.value)}
-          style={{ width: "100%", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 6, color: T.text, padding: "8px 10px", marginBottom: 18, boxSizing: "border-box" }} />
+          style={{ width: "100%", background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: T.rCtl, color: T.text, padding: "10px 12px", marginBottom: 18, boxSizing: "border-box" }} />
         {erro && <div style={{ color: T.danger, fontSize: 12, marginBottom: 14 }}>{erro}</div>}
-        <button type="submit" disabled={enviando} style={{ width: "100%", background: T.primary, color: "#fff", border: "none", borderRadius: 6, padding: "10px 0", fontWeight: 700, cursor: "pointer" }}>
+        <button type="submit" disabled={enviando} style={{ width: "100%", background: T.gradient, color: T.onPrimary, border: "none", borderRadius: T.rCtl, padding: "12px 0", fontWeight: 700, cursor: "pointer", boxShadow: `0 10px 30px -12px ${T.primary}` }}>
           {enviando ? "Entrando…" : "Entrar"}
         </button>
       </form>
@@ -657,7 +683,7 @@ function TelaLogin({ T }) {
 function ImportTab({ T, historico, loading, meses, onSalvarAjuste, handleFile2107, handleFilesGrupo222, handleFileTermo1, handleFileTermo2, handleFileProdutos1464, handleFileTrimestral, mesesTrimestral, handleFileClientes, mesesClientes }) {
   return (
     <div>
-      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Importar relatórios</h1>
+      <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Importar relatórios</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 24, maxWidth: 680 }}>
         Com o script semanal do Winthor rodando, a DRE contábil, o Faturamento Gerencial, os Grupos 222 e 750, as Notas Técnicas, o Faturamento por Cliente e o Mix de Vendas chegam sozinhos; os imports abaixo servem de contingência e de histórico. A partir de setembro/2026 nenhum import é necessário: os Descontos Concedidos não têm mais estratificação e valem a própria linha da DRE (decisão do Pedro, 05/10/2026).
       </p>
@@ -748,10 +774,10 @@ function AjusteManualCard({ T, historico, meses, onSalvar }) {
 
 function ImportCard({ T, nome, desc, badge, badgeColor, meses, loading, children }) {
   return (
-    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 18 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ fontWeight: 700, fontSize: 14 }}>{nome}</div>
-        <span style={{ fontSize: 9, color: badgeColor, fontWeight: 700 }}>{badge}</span>
+    <div style={{ ...glass(T), padding: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, flex: 1, minWidth: 0 }}>{nome}</div>
+        <span style={{ fontSize: 9, color: badgeColor, fontWeight: 700, border: `1px solid ${badgeColor}55`, borderRadius: 20, padding: "3px 8px", whiteSpace: "nowrap", flexShrink: 0, lineHeight: 1 }}>{badge}</span>
       </div>
       <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3, marginBottom: 10 }}>{desc}</div>
       <div style={{ fontSize: 11, color: T.textSub, marginBottom: 12 }}>{meses.length === 0 ? "Nenhum mês importado ainda" : `${meses.length} mês(es): ${meses.sort().map((m) => MESES_LABEL[m] || m).join(", ")}`}</div>
@@ -760,14 +786,14 @@ function ImportCard({ T, nome, desc, badge, badgeColor, meses, loading, children
   );
 }
 function botaoStyle(T, destaque) {
-  return { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, background: destaque ? T.gold + "1E" : T.primary, color: destaque ? T.gold : "#fff", border: destaque ? `1px solid ${T.gold}55` : "none", borderRadius: 6, padding: "7px 14px", cursor: "pointer" };
+  return { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, background: destaque ? T.gold + "1E" : T.gradient, color: destaque ? T.gold : T.onPrimary, border: destaque ? `1px solid ${T.gold}55` : "none", borderRadius: 10, padding: "8px 16px", cursor: "pointer" };
 }
 
 // ═══════════════════════════════════════════════════════════════════
 function ReconciliacaoTab({ T, historico, meses }) {
   return (
     <div>
-      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Reconciliação {MESES_LABEL[meses[0]]}-{MESES_LABEL[meses[meses.length - 1]]}/2026</h1>
+      <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Reconciliação {MESES_LABEL[meses[0]]}-{MESES_LABEL[meses[meses.length - 1]]}/2026</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 22, maxWidth: 680 }}>Cada valor importado é comparado ao número já validado na auditoria manual (13-20/08/2026).</p>
       <ReconciliacaoSecao T={T} meses={meses} titulo="Linha 138 — Descontos Concedidos" hist={historico["2107"]} getValor={(h) => h.extra?.saldoCaixa} oficial={OFICIAL_SEED["138"]} soComparaCompetencia
         notaRegime="Comparado sempre em regime de caixa (bruto), porque a referência oficial desta linha passou a usar essa base em 18/09 — ver decisão registrada em dreReference.js." />
@@ -788,10 +814,10 @@ function combinarTermos(t1, t2) {
   return out;
 }
 function ReconciliacaoSecao({ T, meses, titulo, hist, getValor, oficial, soComparaCompetencia, notaRegime }) {
-  if (!hist || Object.keys(hist).length === 0) return <div style={{ marginBottom: 22 }}><h2 style={{ fontFamily: T.fontDisplay, fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{titulo}</h2><div style={{ color: T.textMuted, fontSize: 12 }}>Ainda não importado.</div></div>;
+  if (!hist || Object.keys(hist).length === 0) return <div style={{ marginBottom: 22 }}><h2 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 16, fontWeight: 700, marginBottom: 8 }}>{titulo}</h2><div style={{ color: T.textMuted, fontSize: 12 }}>Ainda não importado.</div></div>;
   return (
     <div style={{ marginBottom: 28 }}>
-      <h2 style={{ fontFamily: T.fontDisplay, fontSize: 16, fontWeight: 700, marginBottom: notaRegime ? 4 : 10 }}>{titulo}</h2>
+      <h2 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 16, fontWeight: 700, marginBottom: notaRegime ? 4 : 10 }}>{titulo}</h2>
       {notaRegime && <p style={{ color: T.textMuted, fontSize: 11, marginBottom: 10, maxWidth: 680 }}>{notaRegime}</p>}
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -863,7 +889,7 @@ function AnomaliasTab({ T, dreNodes, meses, limiarPct, setLimiarPct, overrides }
 
   return (
     <div>
-      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Anomalias — fora da curva</h1>
+      <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Anomalias — fora da curva</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 10, maxWidth: 760 }}>
         Cada uma das 186 linhas da DRE (totais e contas sintéticas — inclusive as que ficam ocultas por padrão na árvore) é comparada mês a mês com a <b>média dos 3 meses anteriores</b>. Só aparecem aqui as contas cuja variação passou do limite de sensibilidade definido abaixo — isso serve para a contabilidade antecipar justificativas antes da diretoria perguntar.
       </p>
@@ -965,7 +991,7 @@ function ImpostosTab({ T, dreNodes, dre, meses, overrides }) {
   const linhas = useMemo(() => meses.map((mes) => calcularCargaTributaria(mes, dreNodes, overrides, dreDoMes[mes])), [dreNodes, meses, overrides, dreDoMes]);
   return (
     <div>
-      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Receita × Lucro × Impostos</h1>
+      <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Receita × Lucro × Impostos</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 20, maxWidth: 680 }}>
         Comparativo direto entre os três: quanto entra (Receita Bruta), quanto sobra (Lucro com Subvenções) e quanto vai para impostos (ICMS s/venda + PIS + COFINS + Despesas Tributárias + Provisão CSLL/IRPJ), mês a mês.
       </p>
@@ -1022,7 +1048,7 @@ function ProdutosTab({ T, historico, fatGerencialPorMes, dre }) {
   if (mesesDisponiveis.length === 0) {
     return (
       <div>
-        <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Mix de Vendas</h1>
+        <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Mix de Vendas</h1>
         <p style={{ color: T.textSub, fontSize: 13, marginBottom: 20, maxWidth: 640 }}>
           Quantidade vendida, preço médio e participação por sabor (Rotina 1464), com ticket médio da empresa e comparativo visual com a lucratividade do mês.
         </p>
@@ -1036,7 +1062,7 @@ function ProdutosTab({ T, historico, fatGerencialPorMes, dre }) {
   if (!dadosMes || !Array.isArray(dadosMes.produtos)) {
     return (
       <div>
-        <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Mix de Vendas</h1>
+        <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Mix de Vendas</h1>
         <div style={{ textAlign: "center", padding: "40px 0", color: T.textMuted }}>Não consegui carregar os dados desse mês. Tenta reimportar o arquivo "Mix de Vendas" na aba Importar.</div>
       </div>
     );
@@ -1056,7 +1082,7 @@ function ProdutosTab({ T, historico, fatGerencialPorMes, dre }) {
 
   return (
     <div>
-      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Mix de Vendas</h1>
+      <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Mix de Vendas</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 8, maxWidth: 680 }}>
         Quantidade vendida, preço médio e participação por sabor (Rotina 1464), <b>separados por departamento comercial</b> e em ordem alfabética dentro de cada um. O painel abaixo é <b>comparativo visual</b>, não um coeficiente estatístico — com 7 meses de histórico, uma correlação formal seria pouco confiável; aqui o objetivo é permitir enxergar o padrão a olho.
       </p>
@@ -1162,7 +1188,7 @@ function ProdutosTab({ T, historico, fatGerencialPorMes, dre }) {
 function RastreabilidadeTab({ T }) {
   return (
     <div>
-      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Rastreabilidade</h1>
+      <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Rastreabilidade</h1>
       <p style={{ color: T.textSub, fontSize: 13, maxWidth: 640 }}>
         {persistenceEnabled
           ? "O histórico completo de lotes por mês/rotina já é gravado no Supabase, incluindo versões substituídas. Uma consulta detalhada por lote será adicionada em uma próxima etapa."
@@ -1175,7 +1201,7 @@ function EmptyState({ T, onGoImport }) {
   return (
     <div style={{ textAlign: "center", padding: "60px 0", color: T.textMuted }}>
       <div style={{ marginBottom: 12 }}>Nenhum dado importado ainda.</div>
-      <button onClick={onGoImport} style={{ background: T.primary, color: "#fff", border: "none", borderRadius: 6, padding: "8px 18px", fontWeight: 700, cursor: "pointer" }}>Ir para Importar</button>
+      <button onClick={onGoImport} style={{ background: T.primary, color: T.onPrimary, border: "none", borderRadius: 6, padding: "8px 18px", fontWeight: 700, cursor: "pointer" }}>Ir para Importar</button>
     </div>
   );
 }

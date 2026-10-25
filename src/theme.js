@@ -35,6 +35,7 @@ export const THEMES = {
     onPrimary: "#1E0800",       // texto sobre laranja (branco só dá 3:1 aqui)
     primaryText: "#FF7A3D",     // laranja legível sobre fundo escuro (texto/ícone)
     gradient: "linear-gradient(180deg, #FF5A1A 0%, #FF9A5C 100%)",
+    sloganGradient: "linear-gradient(180deg, #FFC9A3 0%, #FF8A4D 42%, #FF4D0D 100%)",
     bg: "#0E0400", surface: "#160803", card: "#1B0C06",
     border: "rgba(255,130,70,0.16)", borderHi: "rgba(255,130,70,0.38)",
     text: "#FFF0E6", textSub: "#C4B0A4", textMuted: "#8F7A70",
@@ -56,6 +57,7 @@ export const THEMES = {
     onPrimary: "#FFFFFF",
     primaryText: "#C03F08",
     gradient: "linear-gradient(180deg, #E8500D 0%, #F58445 100%)",
+    sloganGradient: "linear-gradient(180deg, #F58445 0%, #E0500F 45%, #B83A05 100%)",
     bg: "#FFF3EA", surface: "#FFFFFF", card: "#FFFFFF",
     border: "rgba(170,80,25,0.14)", borderHi: "rgba(170,80,25,0.32)",
     text: "#1E0B00", textSub: "#6B4F40", textMuted: "#977E70",

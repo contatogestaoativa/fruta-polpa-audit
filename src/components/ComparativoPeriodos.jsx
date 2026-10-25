@@ -1,6 +1,7 @@
 import { useState, useMemo, Fragment } from "react";
 import { getValorNode, localizarLinha } from "../lib/dreReference.js";
 import { fechamentosNoMes, fechamentosNoPeriodo } from "../lib/fechamentos.js";
+import { glass } from "../theme.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // COMPARATIVO DE PERÍODOS (demanda Gerson, 31/08/2026)
@@ -186,7 +187,7 @@ export default function ComparativoPeriodos({ T, dreNodes, fatGerencial, meses, 
 
   return (
     <div>
-      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Comparativo de Períodos</h1>
+      <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Comparativo de Períodos</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 16, maxWidth: 760 }}>
         Escolha dois períodos quaisquer — dois meses, ou dois intervalos — e veja a DRE inteira lado a lado, linha por linha, com a diferença em R$ e em %. A análise vertical segue a regra da DRE: bloco contábil sobre a <b>Receita dos Produtos Vendidos</b>, bloco gerencial sobre o <b>Faturamento Gerencial</b>.
       </p>
@@ -201,7 +202,7 @@ export default function ComparativoPeriodos({ T, dreNodes, fatGerencial, meses, 
           <div style={{ display: "flex", background: T.surface, border: `1px solid ${T.borderHi}`, borderRadius: 20, padding: 2 }}>
             {[["total", "Total"], ["mensal", "Média mensal"], ["fechamento", "Por fechamento"]].map(([id, lb]) => (
               <button key={id} onClick={() => setBase(id)} title={id === "fechamento" ? "Divide pelo nº de sextas-feiras (fechamentos) do período" : id === "mensal" ? "Divide pelo nº de meses do período" : "Soma pura do período"}
-                style={{ border: "none", borderRadius: 18, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", background: base === id ? T.primary : "transparent", color: base === id ? "#fff" : T.textSub }}>
+                style={{ border: "none", borderRadius: 18, padding: "6px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", background: base === id ? T.gradient : "transparent", color: base === id ? T.onPrimary : T.textSub }}>
                 {base === id ? "✓ " : ""}{lb}
               </button>
             ))}
@@ -234,7 +235,7 @@ export default function ComparativoPeriodos({ T, dreNodes, fatGerencial, meses, 
       {/* ── Cards de resultado ──────────────────────────────────── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 12, marginBottom: 24 }}>
         {cards.map((c) => (
-          <div key={c.node.row} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 14 }}>
+          <div key={c.node.row} style={{ ...glass(T), borderRadius: 16, padding: 14 }}>
             <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, marginBottom: 8 }}>{c.node.label}</div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: T.textSub, marginBottom: 2 }}>
               <span>A · {labelA}</span><b>{c.ehPct ? fmtPctFracao(c.a) : fmtMoedaCurta(c.a)}</b>
@@ -251,7 +252,7 @@ export default function ComparativoPeriodos({ T, dreNodes, fatGerencial, meses, 
       </div>
 
       {/* ── Top movers ──────────────────────────────────────────── */}
-      <h2 style={{ fontFamily: T.fontDisplay, fontSize: 18, fontWeight: 700, marginBottom: 6 }}>O que mais mexeu o resultado</h2>
+      <h2 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 18, fontWeight: 700, marginBottom: 6 }}>O que mais mexeu o resultado</h2>
       <p style={{ color: T.textMuted, fontSize: 12, marginBottom: 10 }}>As 12 contas analíticas com maior diferença em R$ entre os dois períodos — ordenadas por impacto, não por %.</p>
       <div style={{ border: `1px solid ${T.border}`, borderRadius: 8, overflow: "auto", marginBottom: 28 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -279,7 +280,7 @@ export default function ComparativoPeriodos({ T, dreNodes, fatGerencial, meses, 
       </div>
 
       {/* ── DRE lado a lado ─────────────────────────────────────── */}
-      <h2 style={{ fontFamily: T.fontDisplay, fontSize: 18, fontWeight: 700, marginBottom: 10 }}>DRE lado a lado</h2>
+      <h2 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 18, fontWeight: 700, marginBottom: 10 }}>DRE lado a lado</h2>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <button onClick={() => setExpandidas(new Set(secoes.map((s) => s.header.row)))} style={btnMini(T)}>Expandir tudo (analítico)</button>
         <button onClick={() => setExpandidas(new Set())} style={btnMini(T)}>Recolher tudo (sintético)</button>

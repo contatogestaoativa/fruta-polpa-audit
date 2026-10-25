@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { calcularResumoDoMes, montarPayloadIA, MAX_JANELA, resolverRows } from "../lib/resumoMensal.js";
 import { persistenceEnabled, salvarResumoMensal, listarResumosMensais, carregarResumoMensal } from "../lib/supabaseClient.js";
+import { glass } from "../theme.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // RESUMO DO MÊS (demanda Gerson, 01/09/2026)
@@ -174,7 +175,7 @@ export default function ResumoDoMes({ T, dreNodes, fatGerencial, meses, mesesLab
 
   return (
     <div>
-      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Resumo do Mês</h1>
+      <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Resumo do Mês</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 16, maxWidth: 780 }}>
         Compara o mês escolhido com a <b>DRE média do ano</b> e mostra, conta por conta, o que puxou o resultado pra cima ou pra baixo. A média usa uma janela móvel dos meses já fechados, travada em no máximo {MAX_JANELA}.
       </p>
@@ -193,7 +194,7 @@ export default function ResumoDoMes({ T, dreNodes, fatGerencial, meses, mesesLab
           Incluir o mês analisado na média
         </label>
         <button onClick={gerarResumo} disabled={gerando} style={{
-          background: gerando ? T.surface : T.primary, color: gerando ? T.textMuted : "#fff",
+          background: gerando ? T.surface : T.primary, color: gerando ? T.textMuted : T.onPrimary,
           border: "none", borderRadius: 6, padding: "8px 16px", fontWeight: 700, fontSize: 12,
           cursor: gerando ? "default" : "pointer",
         }}>
@@ -219,7 +220,7 @@ export default function ResumoDoMes({ T, dreNodes, fatGerencial, meses, mesesLab
         </div>
       )}
       {texto && (
-        <div style={{ border: `1px solid ${T.border}`, background: T.card, borderRadius: 10, padding: "18px 22px", marginBottom: 24, maxWidth: 900 }}>
+        <div style={{ ...glass(T), padding: "18px 22px", marginBottom: 24, maxWidth: 900 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
             <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, letterSpacing: 0.5 }}>
               RESUMO DE RESULTADO · {(mesesLabel[mes] || mes).toUpperCase()}
@@ -251,7 +252,7 @@ export default function ResumoDoMes({ T, dreNodes, fatGerencial, meses, mesesLab
       {/* ── Histórico de resumos gerados ────────────────────────── */}
       {persistenceEnabled && (
         <div style={{ marginBottom: 26 }}>
-          <h2 style={{ fontFamily: T.fontDisplay, fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Resumos já gerados</h2>
+          <h2 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Resumos já gerados</h2>
           <p style={{ color: T.textMuted, fontSize: 12, marginBottom: 10, maxWidth: 780 }}>
             Cada geração fica guardada com data e hora. Se a base for corrigida e você gerar de novo, a versão anterior continua aqui: ela é o registro do que foi apresentado à diretoria naquela data.
           </p>
@@ -294,12 +295,12 @@ export default function ResumoDoMes({ T, dreNodes, fatGerencial, meses, mesesLab
       )}
 
       {/* ── 1. Linhas de resultado ──────────────────────────────── */}
-      <h2 style={{ fontFamily: T.fontDisplay, fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Linhas de resultado</h2>
+      <h2 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Linhas de resultado</h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12, marginBottom: 26 }}>
         {resumo.resultado.map((c) => (
           <CardResultado key={c.row} T={T} c={c} mesLabel={mesesLabel[mes]} />
         ))}
-        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 14 }}>
+        <div style={{ ...glass(T), borderRadius: 16, padding: 14 }}>
           <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, marginBottom: 8 }}>MARGEM BRUTA (% DA RECEITA)</div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: T.text, marginBottom: 2 }}>
             <span>{mesesLabel[mes]}</span><b>{fmtPctFracao(resumo.margemBruta.mes)}</b>
@@ -314,7 +315,7 @@ export default function ResumoDoMes({ T, dreNodes, fatGerencial, meses, mesesLab
       </div>
 
       {/* ── 2. Itens e variações ────────────────────────────────── */}
-      <h2 style={{ fontFamily: T.fontDisplay, fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Itens e variações que explicam o resultado</h2>
+      <h2 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Itens e variações que explicam o resultado</h2>
       <p style={{ color: T.textMuted, fontSize: 12, marginBottom: 10, maxWidth: 780 }}>
         As 15 contas analíticas que mais afastaram {mesesLabel[mes]} da média, ordenadas por impacto em R$. Leia as três últimas colunas antes das de reais: <b>custo e despesa se analisam em percentual da receita</b>, porque em reais a variação de volume se mistura com a de eficiência. A coluna <b>Δ p.p.</b> é a que diz se a operação piorou.
       </p>
@@ -348,7 +349,7 @@ export default function ResumoDoMes({ T, dreNodes, fatGerencial, meses, mesesLab
       </div>
 
       {/* ── 3. DRE média x mês ──────────────────────────────────── */}
-      <h2 style={{ fontFamily: T.fontDisplay, fontSize: 18, fontWeight: 700, marginBottom: 10 }}>DRE média do ano × {mesesLabel[mes]}</h2>
+      <h2 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 18, fontWeight: 700, marginBottom: 10 }}>DRE média do ano × {mesesLabel[mes]}</h2>
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <button onClick={() => setExpandidas(new Set(secoes.map((s) => s.header.row)))} style={btnMini(T)}>Expandir tudo (analítico)</button>
         <button onClick={() => setExpandidas(new Set())} style={btnMini(T)}>Recolher tudo (sintético)</button>
@@ -379,7 +380,7 @@ export default function ResumoDoMes({ T, dreNodes, fatGerencial, meses, mesesLab
 function CardResultado({ T, c, mesLabel }) {
   const bateu = c.delta !== null && c.delta >= 0;
   return (
-    <div style={{ background: T.card, border: `1px solid ${bateu ? T.leaf + "55" : T.danger + "55"}`, borderRadius: 10, padding: 14 }}>
+    <div style={{ ...glass(T), border: `1px solid ${bateu ? T.leaf + "55" : T.danger + "55"}`, borderRadius: 16, padding: 14 }}>
       <div style={{ fontSize: 10, color: T.textMuted, fontWeight: 700, marginBottom: 8 }}>{c.label}</div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: T.text, marginBottom: 2 }}>
         <span>{mesLabel}</span><b>{c.ehPct ? fmtPctFracao(c.valor) : fmtMoedaCurta(c.valor)}</b>

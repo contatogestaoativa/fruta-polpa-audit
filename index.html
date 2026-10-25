@@ -19,6 +19,10 @@
       #root { min-height: 100vh; }
 
 
+      /* títulos e primeiro parágrafo de cada tela: sombra suave para destacar do cenário */
+      html[data-tema="dark"] .fp-conteudo h1, html[data-tema="dark"] .fp-conteudo h1 + p { text-shadow: 0 1px 2px rgba(14, 4, 0, 0.9), 0 0 22px rgba(14, 4, 0, 0.95); }
+      html[data-tema="light"] .fp-conteudo h1, html[data-tema="light"] .fp-conteudo h1 + p { text-shadow: 0 0 20px rgba(255, 243, 234, 0.95); }
+
       ::selection { background: rgba(255, 90, 26, 0.45); color: #fff; }
       :focus-visible { outline: 2px solid #FF7A3D; outline-offset: 2px; border-radius: 6px; }
       button { font-family: inherit; transition: background-color .15s, border-color .15s, color .15s, box-shadow .15s; }

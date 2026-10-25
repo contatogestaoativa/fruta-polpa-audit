@@ -679,8 +679,8 @@ function TelaLogin({ T }) {
       <main className="fp-login-grid" style={{ flex: 1, position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 430px)", alignItems: "center", columnGap: "clamp(32px, 6vw, 96px)", rowGap: 40, padding: "56px clamp(24px, 6vw, 96px)", maxWidth: 1360, width: "100%", margin: "0 auto" }}>
 
         {/* ── Marca: logo original animada + slogan ── */}
-        <section style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
-          <div className="fp-entra" style={{ position: "relative", width: "clamp(200px, 26vw, 320px)", aspectRatio: String(LOGO_PROPORCAO) }}>
+        <section className="fp-marca" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0 }}>
+          <div className="fp-entra" style={{ position: "relative", width: "clamp(120px, 12.5vw, 176px)", aspectRatio: String(LOGO_PROPORCAO) }}>
             <div aria-hidden="true" style={{ position: "absolute", inset: "-22%", background: "radial-gradient(closest-side, rgba(255, 90, 26, 0.45), transparent 72%)", filter: "blur(10px)" }} />
             <div className="fp-flutua" style={{ position: "relative", width: "100%", height: "100%" }}>
               <img src={LOGO_SRC} alt="Fruta Polpa" style={{ width: "100%", height: "100%", display: "block" }} />
@@ -688,9 +688,12 @@ function TelaLogin({ T }) {
             </div>
           </div>
 
-          <h1 style={{ marginTop: 38, fontFamily: T.fontDisplay, fontStretch: T.displayStretch, lineHeight: 0.98, letterSpacing: "-0.035em" }}>
-            <span className="fp-entra" style={{ display: "block", animationDelay: ".35s", fontSize: "clamp(46px, 7.4vw, 96px)", fontWeight: 800, background: T.sloganGradient, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", paddingBottom: "0.06em" }}>A melhor</span>
-            <span className="fp-entra" style={{ display: "block", animationDelay: ".55s", marginTop: 4, fontSize: "clamp(28px, 4.4vw, 58px)", fontWeight: 400, color: T.text }}>do Brasil</span>
+          <h1 className="fp-entra fp-slogan" style={{ animationDelay: ".35s", marginTop: 34, fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontWeight: 400, lineHeight: 1.25, letterSpacing: "-0.02em", color: T.text, whiteSpace: "nowrap" }}>
+            <span style={{ position: "relative", display: "inline-block", isolation: "isolate", padding: "0 0.24em", marginLeft: "-0.24em", marginRight: "0.08em" }}>
+              <span aria-hidden="true" className="fp-grifo" style={{ position: "absolute", zIndex: -1, left: 0, right: 0, top: "36%", bottom: "6%", borderRadius: "0.1em 0.18em 0.12em 0.2em", background: T.grifo, boxShadow: T.grifoBrilho }} />
+              A melhor
+            </span>
+            do Brasil
           </h1>
           <p className="fp-entra" style={{ animationDelay: ".85s", marginTop: 24, fontSize: 15, color: T.textSub }}>Sistema de Auditoria Gerencial</p>
         </section>

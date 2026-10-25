@@ -66,7 +66,7 @@ export default function AnaliseTrimestral({ T, dreNodes, meses, numeracaoLegada,
 
   return (
     <div>
-      <h1 style={{ fontFamily: T.fontDisplay, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Análise Trimestral — 2026 x 2025</h1>
+      <h1 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Análise Trimestral — 2026 x 2025</h1>
       <p style={{ color: T.textSub, fontSize: 13, marginBottom: 6, maxWidth: 680 }}>
         Comparativo ano a ano (2025 x 2026), com fechamento por trimestre. Os dados de 2025 são fixos (referência histórica); os de 2026 usam os valores já importados no sistema quando disponíveis, e o arquivo "Comparativo 2025x2026" (aba Importar) para os meses seguintes.
       </p>

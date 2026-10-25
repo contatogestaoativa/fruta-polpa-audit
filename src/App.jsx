@@ -550,7 +550,7 @@ export default function App() {
           </span>
         </div>
 
-      <div style={{ padding: "28px 32px", maxWidth: 1280, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
+      <div className="fp-conteudo" style={{ padding: "28px 32px", maxWidth: 1280, margin: "0 auto", width: "100%", position: "relative", zIndex: 1 }}>
       {falhaPersistencia && (
         <div role="alert" style={{ border: `1px solid ${T.warning}`, background: T.warning + "1E", borderRadius: 8, padding: "12px 14px", marginBottom: 18, fontSize: 12, color: T.text, display: "flex", gap: 10, alignItems: "flex-start" }}>
           <b style={{ whiteSpace: "nowrap" }}>⚠ NÃO SALVO</b>
@@ -626,12 +626,13 @@ export default function App() {
 // topo, com grade de pontos que se dissolve e o nome da marca gigante e quase
 // invisível ao fundo. Decorativo: fica atrás do conteúdo e não recebe clique.
 function Cenario({ T, altura = 560, palavra = "Fruta Polpa" }) {
-  const dissolver = "linear-gradient(180deg, #000 0%, transparent 85%)";
+  const dissolver = "radial-gradient(34% 62% at 50% 0%, #000 0%, transparent 100%)";
   return (
     <div aria-hidden="true" style={{ position: "absolute", top: 0, left: 0, right: 0, height: altura, overflow: "hidden", pointerEvents: "none", zIndex: 0, WebkitMaskImage: "linear-gradient(180deg, #000 68%, transparent 100%)", maskImage: "linear-gradient(180deg, #000 68%, transparent 100%)" }}>
       <div className="fp-luz" style={{ position: "absolute", inset: 0 }}>
         <div style={{ position: "absolute", inset: 0, background: T.beam }} />
         <div style={{ position: "absolute", inset: 0, background: T.beamCore }} />
+        <div style={{ position: "absolute", inset: 0, background: `linear-gradient(90deg, ${T.bg}E6 0%, ${T.bg}99 28%, ${T.bg}00 62%)` }} />
         <div style={{ position: "absolute", inset: 0, backgroundImage: `radial-gradient(${T.dots} 1px, transparent 1.3px)`, backgroundSize: "10px 10px", WebkitMaskImage: dissolver, maskImage: dissolver }} />
       </div>
       <div style={{ position: "absolute", left: "50%", bottom: typeof altura === "number" ? -altura * 0.12 : "-6%", transform: "translateX(-50%)", whiteSpace: "nowrap", fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontWeight: 800, fontSize: "clamp(120px, 21vw, 300px)", lineHeight: 1, letterSpacing: "-0.04em", color: T.ghost, userSelect: "none" }}>

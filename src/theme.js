@@ -45,7 +45,7 @@ export const THEMES = {
     // cenário (feixe de luz / grade de pontos / palavra-fantasma)
     beam: "radial-gradient(55% 100% at 50% 0%, rgba(255,96,30,0.52) 0%, rgba(255,90,26,0.16) 42%, transparent 72%)",
     beamCore: "radial-gradient(12% 58% at 50% 0%, rgba(255,150,80,0.70) 0%, transparent 100%)",
-    dots: "rgba(255,170,120,0.30)",
+    dots: "rgba(255,170,120,0.16)",
     ghost: "rgba(255,106,40,0.07)",
     headerGlass: "rgba(14,4,0,0.72)",
   },
@@ -64,7 +64,7 @@ export const THEMES = {
     glassShadow: "0 22px 50px -26px rgba(232,80,13,0.38), inset 0 1px 0 rgba(255,255,255,0.9)",
     beam: "radial-gradient(60% 100% at 50% 0%, rgba(255,120,60,0.34) 0%, rgba(255,150,90,0.12) 45%, transparent 75%)",
     beamCore: "radial-gradient(14% 55% at 50% 0%, rgba(255,210,170,0.65) 0%, transparent 100%)",
-    dots: "rgba(232,80,13,0.22)",
+    dots: "rgba(232,80,13,0.12)",
     ghost: "rgba(232,80,13,0.07)",
     headerGlass: "rgba(255,243,234,0.78)",
   },

@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef, Component } from "react";
 import * as XLSX from "xlsx";
 import { THEMES, glass } from "./theme.js";
+import { LOGO_SRC, LOGO_PROPORCAO } from "./lib/logoData.js";
 import { Logo } from "./components/Logo.jsx";
 import { AnomalyBadge, StatCard } from "./components/AnomalyBadge.jsx";
 import DreHierarquica from "./components/DreHierarquica.jsx";
@@ -498,7 +499,7 @@ export default function App() {
         position: "sticky", top: 0, height: "100vh", overflow: "hidden", zIndex: 1000,
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: sidebarAberta ? "space-between" : "center", padding: "14px 12px", borderBottom: `1px solid ${T.border}`, minHeight: 60, boxSizing: "border-box" }}>
-          {sidebarAberta && <Logo T={T} height={30} />}
+          {sidebarAberta && <Logo T={T} height={44} showText={false} />}
           <button onClick={() => setSidebarAberta((v) => !v)} title={sidebarAberta ? "Recolher menu" : "Expandir menu"}
             style={{ background: "transparent", border: `1px solid ${T.borderHi}`, borderRadius: 6, width: 28, height: 28, color: T.textSub, cursor: "pointer", fontSize: 13, flexShrink: 0 }}>
             {sidebarAberta ? "«" : "»"}
@@ -612,10 +613,7 @@ export default function App() {
       </ErrorBoundary>
       </div>
 
-      <div style={{ marginTop: 40, padding: "20px 28px", borderTop: `1px solid ${T.border}`, opacity: 0.6, display: "flex", justifyContent: "space-between" }}>
-        <Logo T={T} height={18} showText={false} />
-        <div style={{ fontSize: 10, color: T.textMuted }}>FRUTA POLPA · SISTEMA DE AUDITORIA GERENCIAL</div>
-      </div>
+      <Rodape T={T} style={{ marginTop: "auto", position: "relative", zIndex: 1 }} />
       </div>
     </div>
   );
@@ -642,6 +640,16 @@ function Cenario({ T, altura = 560, palavra = "Fruta Polpa" }) {
   );
 }
 
+// Rodapé discreto: direitos e autoria, letra miúda, sem chamar atenção.
+function Rodape({ T, style }) {
+  return (
+    <footer style={{ padding: "18px 24px 22px", textAlign: "center", fontSize: 10.5, lineHeight: 1.7, color: T.textMuted, ...style }}>
+      <div>© {new Date().getFullYear()} Fruta Polpa. Todos os direitos reservados.</div>
+      <div>Sistema desenvolvido pela IN Consultoria.</div>
+    </footer>
+  );
+}
+
 function TelaCarregando({ T }) {
   return <div style={{ minHeight: "100vh", background: T.bg, color: T.textSub, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: T.fontBody }}>Carregando…</div>;
 }
@@ -660,22 +668,49 @@ function TelaLogin({ T }) {
     if (!r.ok) setErro(r.motivo === "Invalid login credentials" ? "E-mail ou senha incorretos." : r.motivo);
   }
 
+  const campo = { width: "100%", background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: T.rCtl, color: T.text, padding: "12px 14px", fontSize: 14, marginBottom: 16 };
+  const rotulo = { fontSize: 12, color: T.textSub, display: "block", marginBottom: 6 };
+  const mascara = { WebkitMaskImage: `url(${LOGO_SRC})`, maskImage: `url(${LOGO_SRC})`, WebkitMaskSize: "contain", maskSize: "contain", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" };
+
   return (
-    <div style={{ minHeight: "100vh", position: "relative", overflow: "hidden", background: T.bg, color: T.text, fontFamily: T.fontBody, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ minHeight: "100vh", position: "relative", overflow: "hidden", background: T.bg, color: T.text, fontFamily: T.fontBody, display: "flex", flexDirection: "column" }}>
       <Cenario T={T} altura="100%" />
-      <form onSubmit={handleSubmit} style={{ ...glass(T), position: "relative", zIndex: 1, padding: 32, width: 340 }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}><Logo T={T} height={40} /></div>
-        <label style={{ fontSize: 12, color: T.textSub, display: "block", marginBottom: 6 }}>E-mail</label>
-        <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
-          style={{ width: "100%", background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: T.rCtl, color: T.text, padding: "10px 12px", marginBottom: 14, boxSizing: "border-box" }} />
-        <label style={{ fontSize: 12, color: T.textSub, display: "block", marginBottom: 6 }}>Senha</label>
-        <input type="password" required value={senha} onChange={(e) => setSenha(e.target.value)}
-          style={{ width: "100%", background: T.bg, border: `1px solid ${T.borderHi}`, borderRadius: T.rCtl, color: T.text, padding: "10px 12px", marginBottom: 18, boxSizing: "border-box" }} />
-        {erro && <div style={{ color: T.danger, fontSize: 12, marginBottom: 14 }}>{erro}</div>}
-        <button type="submit" disabled={enviando} style={{ width: "100%", background: T.gradient, color: T.onPrimary, border: "none", borderRadius: T.rCtl, padding: "12px 0", fontWeight: 700, cursor: "pointer", boxShadow: `0 10px 30px -12px ${T.primary}` }}>
-          {enviando ? "Entrando…" : "Entrar"}
-        </button>
-      </form>
+
+      <main className="fp-login-grid" style={{ flex: 1, position: "relative", zIndex: 1, display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 430px)", alignItems: "center", columnGap: "clamp(32px, 6vw, 96px)", rowGap: 40, padding: "56px clamp(24px, 6vw, 96px)", maxWidth: 1360, width: "100%", margin: "0 auto" }}>
+
+        {/* ── Marca: logo original animada + slogan ── */}
+        <section style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+          <div className="fp-entra" style={{ position: "relative", width: "clamp(200px, 26vw, 320px)", aspectRatio: String(LOGO_PROPORCAO) }}>
+            <div aria-hidden="true" style={{ position: "absolute", inset: "-22%", background: "radial-gradient(closest-side, rgba(255, 90, 26, 0.45), transparent 72%)", filter: "blur(10px)" }} />
+            <div className="fp-flutua" style={{ position: "relative", width: "100%", height: "100%" }}>
+              <img src={LOGO_SRC} alt="Fruta Polpa" style={{ width: "100%", height: "100%", display: "block" }} />
+              <div aria-hidden="true" className="fp-brilho" style={{ position: "absolute", inset: 0, ...mascara }} />
+            </div>
+          </div>
+
+          <h1 style={{ marginTop: 38, fontFamily: T.fontDisplay, fontStretch: T.displayStretch, lineHeight: 0.98, letterSpacing: "-0.035em" }}>
+            <span className="fp-entra" style={{ display: "block", animationDelay: ".35s", fontSize: "clamp(46px, 7.4vw, 96px)", fontWeight: 800, background: T.sloganGradient, WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent", paddingBottom: "0.06em" }}>A melhor</span>
+            <span className="fp-entra" style={{ display: "block", animationDelay: ".55s", marginTop: 4, fontSize: "clamp(28px, 4.4vw, 58px)", fontWeight: 400, color: T.text }}>do Brasil</span>
+          </h1>
+          <p className="fp-entra" style={{ animationDelay: ".85s", marginTop: 24, fontSize: 15, color: T.textSub }}>Sistema de Auditoria Gerencial</p>
+        </section>
+
+        {/* ── Acesso ── */}
+        <form onSubmit={handleSubmit} className="fp-entra" style={{ ...glass(T), animationDelay: ".7s", padding: "34px 30px", width: "100%" }}>
+          <h2 style={{ fontFamily: T.fontDisplay, fontStretch: T.displayStretch, fontWeight: 700, fontSize: 22, marginBottom: 6 }}>Acessar o sistema</h2>
+          <p style={{ fontSize: 13, color: T.textSub, marginBottom: 24 }}>Entre com o e-mail e a senha cadastrados.</p>
+          <label htmlFor="fp-email" style={rotulo}>E-mail</label>
+          <input id="fp-email" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} style={campo} />
+          <label htmlFor="fp-senha" style={rotulo}>Senha</label>
+          <input id="fp-senha" type="password" autoComplete="current-password" required value={senha} onChange={(e) => setSenha(e.target.value)} style={{ ...campo, marginBottom: 20 }} />
+          {erro && <div role="alert" style={{ color: T.danger, fontSize: 12, marginBottom: 14 }}>{erro}</div>}
+          <button type="submit" disabled={enviando} style={{ width: "100%", background: T.gradient, color: T.onPrimary, border: "none", borderRadius: T.rCtl, padding: "13px 0", fontWeight: 700, fontSize: 14, cursor: enviando ? "default" : "pointer", opacity: enviando ? 0.7 : 1, boxShadow: `0 10px 30px -12px ${T.primary}` }}>
+            {enviando ? "Entrando…" : "Entrar"}
+          </button>
+        </form>
+      </main>
+
+      <Rodape T={T} style={{ position: "relative", zIndex: 1 }} />
     </div>
   );
 }

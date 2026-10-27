@@ -206,7 +206,30 @@ export function construirDreNodesEfetivo(historicoDreContabil) {
   const nosMolde = historicoDreContabil[mesMolde].extra.nos;
   const blocoGerencialSeed = DRE_NODES_SEED.filter((n) => n.row >= 200);
 
-  const efetivoContabil = nosMolde.map((n, i) => ({
+  // Molde = UNIÃO das contas de todos os meses ao vivo. O mês mais recente dá
+  // a ordem base, mas a PKG_DRECONTABIL só devolve contas COM movimento no mês:
+  // se o molde fosse só o último mês, toda conta que teve movimento em meses
+  // anteriores e nenhum no último sumiria da árvore, e os grupos de jul/ago
+  // deixariam de fechar com a soma das contas (corrigido em 26/10/2026).
+  // Casamento: conta com código casa SÓ pelo código (rótulos repetidos, como
+  // RESCISÃO, existem em grupos diferentes); linha sem código casa pelo rótulo.
+  const normRotulo = (x) => String(x || "").replace(/\s+/g, " ").trim().toUpperCase();
+  const mesmoNo = (a, b) => (a.codconta_pc || b.codconta_pc
+    ? a.codconta_pc === b.codconta_pc
+    : normRotulo(a.label) === normRotulo(b.label) && a.level === b.level);
+  const lista = nosMolde.map((n) => ({ ...n }));
+  for (const mes of [...mesesAoVivo].reverse().slice(1)) {
+    let ancora = -1; // índice, em `lista`, do último nó deste mês já presente
+    for (const n of historicoDreContabil[mes].extra.nos) {
+      const idx = lista.findIndex((x) => mesmoNo(x, n));
+      if (idx >= 0) { ancora = idx; continue; }
+      // conta ausente do molde: entra logo depois da vizinha que tinha naquele mês
+      lista.splice(ancora + 1, 0, { ...n });
+      ancora += 1;
+    }
+  }
+
+  const efetivoContabil = lista.map((n, i) => ({
     row: i + 1, // posição sintética — só precisa ser única e estável dentro desta montagem
     level: n.level,
     label: n.label,
@@ -227,7 +250,7 @@ export function construirDreNodesEfetivo(historicoDreContabil) {
 
   for (const mes of mesesAoVivo) {
     for (const n of historicoDreContabil[mes].extra.nos) {
-      const alvo = (n.codconta_pc && porCodconta[n.codconta_pc]) || porLabel[n.label.trim().toUpperCase()];
+      const alvo = n.codconta_pc ? porCodconta[n.codconta_pc] : porLabel[n.label.trim().toUpperCase()];
       if (alvo) alvo.values[mes] = round2(n.valor || 0);
     }
   }

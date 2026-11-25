@@ -100,11 +100,8 @@ export async function salvarLinhaDre({ loteId, mesReferencia, linhaNumero, valor
   const { error } = await supabase.from("dre_linhas").insert({
     lote_id: loteId,
     mes_referencia: mesReferencia,
-    linha_numero: linhaNumero ?? null,
-    // Rotinas que nao alimentam uma linha da DRE (Mix de Vendas,
-    // Faturamento por Cliente) usam a tabela so como armazenamento do
-    // JSON — sem numero de linha, a descricao vira o nome da rotina.
-    descricao: linhaNumero != null ? `Linha ${linhaNumero}` : `Rotina ${origemRotina || "?"}`,
+    linha_numero: linhaNumero,
+    descricao: `Linha ${linhaNumero}`,
     valor,
     regime: regime || "competencia",
     origem_rotina: origemRotina,
@@ -259,4 +256,64 @@ export async function carregarResumoMensal(id) {
       geradoPor: data.perfis?.nome || null,
     },
   };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LINHAS GERENCIAIS CONFIGURÁVEIS (ver migracao-linhas-gerenciais.sql)
+// Leitura: qualquer pessoa logada. Escrita: só perfis com
+// pode_configurar_layout (a regra vale no banco — o site só esconde a tela).
+// Antes da migração ser aplicada, tudo devolve vazio e o sistema funciona como antes.
+// ═══════════════════════════════════════════════════════════════════
+
+const CAMPOS_EDITAVEIS = ["rotulo", "sinal", "fonte", "fonte_valor", "ordem", "vigente_de", "vigente_ate", "excluida"];
+
+function traduzirErroLinhas(mensagem = "") {
+  if (/row-level security|permission denied/i.test(mensagem)) return "Seu perfil não tem permissão para alterar as linhas gerenciais.";
+  if (/lg_vigencia_dia1/i.test(mensagem)) return "A vigência precisa ser sempre um mês inteiro.";
+  if (/lg_vigencia_ordem/i.test(mensagem)) return "O fim da vigência não pode ser antes do início.";
+  if (/lg_fonte_valor_numerico/i.test(mensagem)) return "O grupo ou a conta do Winthor deve conter só números.";
+  if (/duplicate key/i.test(mensagem)) return "Já existe uma linha com essa chave. Tente novamente.";
+  if (/não podem ser alterados|nao podem ser alterados/i.test(mensagem)) return mensagem;
+  return mensagem;
+}
+
+export async function carregarLinhasGerenciais() {
+  if (!supabase) return { ok: false, motivo: "supabase-nao-configurado", linhas: [], valores: [] };
+  const [l, v] = await Promise.all([
+    supabase.from("linhas_gerenciais").select("*").order("ordem", { ascending: true }),
+    supabase.from("linhas_gerenciais_valores").select("*"),
+  ]);
+  const erro = l.error || v.error;
+  if (erro) return { ok: false, motivo: erro.message, migracaoPendente: tabelaAindaNaoExiste(erro.message), linhas: [], valores: [] };
+  return { ok: true, linhas: l.data || [], valores: v.data || [] };
+}
+
+/** Cria (sem `id`/linha existente) ou atualiza (com chave já existente) uma linha. */
+export async function salvarLinhaGerencial(linha, { nova = false } = {}) {
+  if (!supabase) return { ok: false, motivo: "supabase-nao-configurado" };
+  const dados = Object.fromEntries(CAMPOS_EDITAVEIS.filter((k) => linha[k] !== undefined).map((k) => [k, linha[k]]));
+  const consulta = nova
+    ? supabase.from("linhas_gerenciais").insert({ chave: linha.chave, tipo: "personalizada", ...dados }).select().single()
+    : supabase.from("linhas_gerenciais").update(dados).eq("chave", linha.chave).select().single();
+  const { data, error } = await consulta;
+  if (error) return { ok: false, motivo: traduzirErroLinhas(error.message) };
+  return { ok: true, linha: data };
+}
+
+export async function salvarValorManualLinha({ chave, mes, valor }) {
+  if (!supabase) return { ok: false, motivo: "supabase-nao-configurado" };
+  const mes_referencia = `${mes}-01`;
+  if (valor === null || valor === undefined || valor === "") {
+    const { error } = await supabase.from("linhas_gerenciais_valores").delete().eq("linha_chave", chave).eq("mes_referencia", mes_referencia);
+    return error ? { ok: false, motivo: traduzirErroLinhas(error.message) } : { ok: true };
+  }
+  const { error } = await supabase.from("linhas_gerenciais_valores").upsert({ linha_chave: chave, mes_referencia, valor }, { onConflict: "linha_chave,mes_referencia" });
+  return error ? { ok: false, motivo: traduzirErroLinhas(error.message) } : { ok: true };
+}
+
+export async function listarHistoricoLinhas(limite = 40) {
+  if (!supabase) return { ok: false, historico: [] };
+  const { data, error } = await supabase.from("linhas_gerenciais_historico").select("*").order("em", { ascending: false }).limit(limite);
+  if (error) return { ok: false, motivo: error.message, historico: [] };
+  return { ok: true, historico: data || [] };
 }

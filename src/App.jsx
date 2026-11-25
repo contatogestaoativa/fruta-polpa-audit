@@ -2,6 +2,8 @@ import { useState, useCallback, useMemo, useEffect, useRef, Component } from "re
 import * as XLSX from "xlsx";
 import { THEMES, glass } from "./theme.js";
 import { LOGO_SRC, LOGO_PROPORCAO } from "./lib/logoData.js";
+import { configDoMes, valoresManuaisPorChave } from "./lib/linhasGerenciais.js";
+import ConfigLinhasGerenciais from "./components/ConfigLinhasGerenciais.jsx";
 import { Logo } from "./components/Logo.jsx";
 import { AnomalyBadge, StatCard } from "./components/AnomalyBadge.jsx";
 import DreHierarquica from "./components/DreHierarquica.jsx";
@@ -20,7 +22,7 @@ import { agruparPorDepartamento } from "./lib/departamentos.js";
 import { detectarAnomalia } from "./lib/parsers/anomalyDetection.js";
 import {
   persistenceEnabled, signIn, signOut, getSessaoEPerfil, onAuthChange,
-  importarLoteEGravarLinha, carregarHistoricoDre,
+  importarLoteEGravarLinha, carregarHistoricoDre, carregarLinhasGerenciais,
 } from "./lib/supabaseClient.js";
 import {
   MESES_LABEL, OFICIAL_SEED, AJUSTES_SEED, montarDreDoMes, calcularCargaTributaria, detectarAnomaliasTodasLinhas,
@@ -64,6 +66,7 @@ function resolverRows(dreNodes) {
   };
 }
 
+const TAB_LAYOUT = { id: "layout", label: "Linhas gerenciais", icon: "🧩" };
 const TABS = [
   { id: "import", label: "Importar", icon: "📥" },
   { id: "dre", label: "DRE", icon: "📊" },
@@ -116,8 +119,10 @@ function valorLinha138(h138, regime) {
 
 // Cálculo da DRE de cada mês (contábil + gerencial) a partir do histórico importado e do que o
 // script gravou no Supabase. Fica fora do componente para poder ser testada isoladamente.
-function calcularDrePorMes(historico, regime, dreNodes, MESES, ROW) {
+function calcularDrePorMes(historico, regime, dreNodes, MESES, ROW, linhasCfg = { linhas: [], valores: {} }) {
   const overridesAcc = {}, flagsAcc = {}, dreAcc = [];
+  // linhas criadas pela contabilidade: chave -> número da linha na árvore
+  const rowPersonalizada = Object.fromEntries(dreNodes.filter((n) => n.chavePersonalizada).map((n) => [n.chavePersonalizada, n.row]));
   MESES.forEach((mes) => {
     const h138 = historico["2107"]?.[mes];
     const h209 = historico["750-222"]?.[mes];
@@ -140,7 +145,8 @@ function calcularDrePorMes(historico, regime, dreNodes, MESES, ROW) {
     else if (g?.grupo750 !== undefined) linha211 = g.grupo750;
     const linha211Parcial = Boolean(h211a || h211b) && (termo1 === undefined || termo2 === undefined);
 
-    const d = montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211, nfPosto: g?.notasTecnicas, faturamentoGerencial: g?.faturamentoGerencial });
+    const cfgMes = configDoMes(linhasCfg.linhas, linhasCfg.valores, historico["banco-gerencial"]?.[mes]?.extra, mes);
+    const d = montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211, nfPosto: g?.notasTecnicas, faturamentoGerencial: g?.faturamentoGerencial, config: cfgMes });
     dreAcc.push({ ...d, linha138Live: Boolean(h138), linha209Live: Boolean(h209), linha211Live: Boolean(h211a || h211b), linha211Parcial, gerencialBanco: Boolean(g) });
 
     overridesAcc[mes] = {
@@ -153,6 +159,8 @@ function calcularDrePorMes(historico, regime, dreNodes, MESES, ROW) {
       [ROW.descontos2025]: d.descontos2025, [ROW.descontos2026]: d.descontos2026, [ROW.descontosPorComp]: d.descontosPorComp,
       [ROW.valorSubvencoes]: d.receitasNaoOperacionais, [ROW.csllIrpjGerencial]: d.provisaoCsll ? -d.provisaoCsll : 0, // no gerencial a provisão aparece com o sinal invertido
     };
+    // linhas personalizadas: sem dado no mês (script ainda não rodou / nada digitado) ficam em branco, não em zero
+    cfgMes.personalizadas.forEach((p) => { if (p.temDado && rowPersonalizada[p.chave] !== undefined) overridesAcc[mes][rowPersonalizada[p.chave]] = p.valor; });
     flagsAcc[mes] = { [ROW.descontosConcedidos]: Boolean(h138), [ROW.grupo222Gerencial]: Boolean(h209), [ROW.grupo750Gerencial]: Boolean(h211a || h211b) };
   });
   return { dre: dreAcc, overrides: overridesAcc, importedFlags: flagsAcc };
@@ -181,6 +189,14 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [perfil, setPerfil] = useState(null);
 
+  // Linhas gerenciais configuráveis (ativação/desativação e linhas criadas pela contabilidade).
+  const [linhasCfg, setLinhasCfg] = useState({ linhas: [], valores: {}, migracaoPendente: false });
+  const recarregarLinhas = useCallback(async () => {
+    if (!persistenceEnabled) return;
+    const r = await carregarLinhasGerenciais();
+    setLinhasCfg({ linhas: r.linhas || [], valores: valoresManuaisPorChave(r.valores), migracaoPendente: Boolean(r.migracaoPendente) });
+  }, []);
+
   useEffect(() => {
     if (!persistenceEnabled) { setAuthLoading(false); return; }
     let ativo = true;
@@ -193,6 +209,7 @@ export default function App() {
       if (user) {
         const h = await carregarHistoricoDre();
         if (ativo) setHistorico(h);
+        recarregarLinhas();
       }
     })();
     const unsubscribe = onAuthChange(async (sess) => {
@@ -202,13 +219,15 @@ export default function App() {
         setPerfil(p);
         const h = await carregarHistoricoDre();
         setHistorico(h);
+        recarregarLinhas();
       } else {
         setPerfil(null);
         setHistorico({});
+        setLinhasCfg({ linhas: [], valores: {}, migracaoPendente: false });
       }
     });
     return () => { ativo = false; unsubscribe(); };
-  }, []);
+  }, [recarregarLinhas]);
 
   // Falha de gravacao no Supabase costumava passar em branco: a tela
   // mostrava o mes importado (estado local) e o banco nao recebia nada.
@@ -438,7 +457,7 @@ export default function App() {
   // historico["2122-dre-contabil"] já chega aqui de graça — o mesmo
   // carregarHistoricoDre() que busca as outras rotinas também traz
   // essa, já que a tabela é genérica (ver supabaseClient.js).
-  const dreNodes = useMemo(() => construirDreNodesEfetivo(historico["2122-dre-contabil"]), [historico]);
+  const dreNodes = useMemo(() => construirDreNodesEfetivo(historico["2122-dre-contabil"], linhasCfg.linhas), [historico, linhasCfg.linhas]);
   const MESES = useMemo(() => construirMesesEfetivo(historico["2122-dre-contabil"]), [historico]);
   const ROW = useMemo(() => resolverRows(dreNodes), [dreNodes]);
   // true enquanto nenhum mês tiver dado ao vivo do Supabase ainda — a
@@ -449,8 +468,8 @@ export default function App() {
 
   // ── Recalcula a DRE completa por mês ──
   const { dre, overrides, importedFlags } = useMemo(
-    () => calcularDrePorMes(historico, regime, dreNodes, MESES, ROW),
-    [historico, regime, dreNodes, MESES, ROW]
+    () => calcularDrePorMes(historico, regime, dreNodes, MESES, ROW, linhasCfg),
+    [historico, regime, dreNodes, MESES, ROW, linhasCfg]
   );
 
   // Faturamento Gerencial por mês (do banco quando existe, senão da referência):
@@ -464,6 +483,9 @@ export default function App() {
 
   const hasData = Object.values(historico).some((h) => Object.keys(h).length > 0);
   const podeGerenciarImportacao = podeImportar(perfil);
+  // Só perfis de contabilidade (pode_configurar_layout) veem a tela; a regra de verdade está no banco (RLS).
+  const podeConfigurarLayout = persistenceEnabled && Boolean(perfil?.pode_configurar_layout);
+  const tabsVisiveis = podeConfigurarLayout ? [...TABS, TAB_LAYOUT] : TABS;
 
   // O topo do site e sticky e a altura dele MUDA conforme as abas
   // quebram em mais linhas. Qualquer cabecalho de tabela que queira
@@ -507,7 +529,7 @@ export default function App() {
         </div>
 
         <nav style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "10px 8px" }}>
-          {TABS.map((tab) => (
+          {tabsVisiveis.map((tab) => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} title={!sidebarAberta ? tab.label : undefined}
               style={{
                 display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "9px 10px", marginBottom: 2,
@@ -610,6 +632,9 @@ export default function App() {
         {activeTab === "clientes" && <ClientesTab T={T} dadosClientes={dadosClientes} />}
         {activeTab === "trimestral" && <AnaliseTrimestral T={T} dreNodes={dreNodes} meses={MESES} numeracaoLegada={numeracaoLegada} overrides={overrides} dadosImportados={dadosTrimestral} />}
         {activeTab === "rastreabilidade" && <RastreabilidadeTab T={T} />}
+        {activeTab === "layout" && podeConfigurarLayout && (
+          <ConfigLinhasGerenciais T={T} linhas={linhasCfg.linhas} valores={linhasCfg.valores} meses={MESES} migracaoPendente={linhasCfg.migracaoPendente} onAlterou={recarregarLinhas} />
+        )}
       </ErrorBoundary>
       </div>
 

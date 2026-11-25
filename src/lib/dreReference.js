@@ -59,6 +59,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { fechamentosNoMes } from "./fechamentos.js";
+import { personalizadasOrdenadas, rotuloNaArvore } from "./linhasGerenciais.js";
 import { DRE_NODES as DRE_NODES_SEED } from "./dreNodes.js";
 import { MESES_COM_SUBTOTAL_LIQUIDO } from "./regrasGerenciais.js";
 
@@ -187,14 +188,29 @@ export function getValorNode(node, mes, overrides) {
 //   - Pra cada mês, se existir valor ao vivo (historico tem esse mês),
 //     ele GANHA do seed. Senão, usa o valor do seed, se existir.
 // ═══════════════════════════════════════════════════════════════════
-export function construirDreNodesEfetivo(historicoDreContabil) {
+/**
+ * Acrescenta à árvore as linhas gerenciais criadas pela contabilidade, logo depois de
+ * "DESPESAS GRUPO 750 e 538" (junto dos demais ajustes). Não altera a lista recebida.
+ * Cada nó leva `chavePersonalizada` para o App localizar o valor de cada mês.
+ */
+export function inserirLinhasPersonalizadas(nodes, linhas) {
+  const lista = personalizadasOrdenadas(linhas);
+  if (lista.length === 0) return nodes;
+  let proxima = Math.max(...nodes.map((n) => n.row)) + 1;
+  const novas = lista.map((l) => ({ row: proxima++, level: 0, label: rotuloNaArvore(l), conta: null, total: true, values: {}, chavePersonalizada: l.chave }));
+  const idx = nodes.findIndex((n) => n.label.toUpperCase().includes("DESPESAS GRUPO 750"));
+  const corte = idx >= 0 ? idx + 1 : nodes.length;
+  return [...nodes.slice(0, corte), ...novas, ...nodes.slice(corte)];
+}
+
+export function construirDreNodesEfetivo(historicoDreContabil, linhasPersonalizadas = []) {
   const mesesAoVivo = Object.keys(historicoDreContabil || {})
     .filter((mes) => Array.isArray(historicoDreContabil[mes]?.extra?.nos))
     .sort();
 
   if (mesesAoVivo.length === 0) {
     // Nenhum dado ao vivo ainda — comportamento idêntico ao sistema anterior.
-    return DRE_NODES_SEED;
+    return inserirLinhasPersonalizadas(DRE_NODES_SEED, linhasPersonalizadas);
   }
 
   // Molde: o mês ao vivo mais recente dá a ordem/hierarquia/rótulos do
@@ -267,7 +283,7 @@ export function construirDreNodesEfetivo(historicoDreContabil) {
     }
   }
 
-  return efetivo;
+  return inserirLinhasPersonalizadas(efetivo, linhasPersonalizadas);
 }
 
 export function construirMesesEfetivo(historicoDreContabil) {
@@ -305,7 +321,10 @@ function resolverDepreciacao(dreNodes, mes) {
  * do 2107 — regime de competência, feito pela tela — ele substitui
  * esse bruto e a conta é recalculada a partir daí).
  */
-export function montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211, nfPosto: nfPostoEntrada, faturamentoGerencial: faturamentoEntrada } = {}) {
+export function montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211, nfPosto: nfPostoEntrada, faturamentoGerencial: faturamentoEntrada, config } = {}) {
+  // config (opcional, ver linhasGerenciais.js): { builtinAtiva(curta) -> bool, personalizadas: [{chave, valor}] }.
+  // Sem config, tudo vale como antes (retrocompatível).
+  const ativa = (curta) => (config?.builtinAtiva ? config.builtinAtiva(curta) : true);
   const buscar = (criterio) => {
     const row = localizarLinha(dreNodes, criterio);
     return row ? dreNodes.find((n) => n.row === row)?.values[mes] : undefined;
@@ -332,14 +351,20 @@ export function montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211, nf
   const resultadoLiquido = round2(resultadoAntesCsll + provisaoCsll);
 
   // Ordem de prioridade: import manual na tela > dado do banco (+ ajuste) > seed.
-  const l209 = linha209 ?? OFICIAL_SEED["209"][mes] ?? 0;
-  const l211 = linha211 ?? OFICIAL_SEED["211"][mes] ?? 0;
-  const depreciacao = resolverDepreciacao(dreNodes, mes);
-  const nfPosto = nfPostoEntrada ?? REF_SEED.nfPosto[mes] ?? 0; // "Notas Técnicas" (antes NF Posto)
-  const descontos2025 = REF_SEED.descontosConcedidos2025[mes] || 0;
-  const descontos2026 = REF_SEED.descontosConcedidos2026[mes] || 0;
-  const descontosPorComp = REF_SEED.descontosConcedidosPorComp[mes] || 0;
-  const ajustesGerenciais = round2(depreciacao + l209 + nfPosto - l211 + descontos2025 + descontos2026 + descontosPorComp);
+  // Cada linha existente pode ter vigência (linhasGerenciais.js): fora dela, vale 0 naquele mês.
+  const l209 = ativa("grupo222") ? (linha209 ?? OFICIAL_SEED["209"][mes] ?? 0) : 0;
+  const l211 = ativa("grupo750") ? (linha211 ?? OFICIAL_SEED["211"][mes] ?? 0) : 0;
+  const depreciacao = ativa("depreciacao") ? resolverDepreciacao(dreNodes, mes) : 0;
+  const nfPosto = ativa("notasTecnicas") ? (nfPostoEntrada ?? REF_SEED.nfPosto[mes] ?? 0) : 0; // "Notas Técnicas" (antes NF Posto)
+  const descontos2025 = ativa("descontos2025") ? (REF_SEED.descontosConcedidos2025[mes] || 0) : 0;
+  const descontos2026 = ativa("descontos2026") ? (REF_SEED.descontosConcedidos2026[mes] || 0) : 0;
+  const descontosPorComp = ativa("descontosPorComp") ? (REF_SEED.descontosConcedidosPorComp[mes] || 0) : 0;
+  // Linhas criadas pela contabilidade: já vêm com sinal aplicado (+ soma, − subtrai).
+  const personalizadas = {};
+  let ajustesPersonalizados = 0;
+  for (const p of config?.personalizadas || []) { personalizadas[p.chave] = p.valor; ajustesPersonalizados += p.valor; }
+  ajustesPersonalizados = round2(ajustesPersonalizados);
+  const ajustesGerenciais = round2(depreciacao + l209 + nfPosto - l211 + descontos2025 + descontos2026 + descontosPorComp + ajustesPersonalizados);
   const lucroOperacionalGerencial = round2(lucroOperacionalContabil + ajustesGerenciais);
   const lucroComSubvencoes = round2(resultadoLiquido + ajustesGerenciais);
 
@@ -352,7 +377,7 @@ export function montarDreDoMes(mes, dreNodes, { linha138, linha209, linha211, nf
     mes, receitaBruta, deducoes, receitaLiquida, cpv, lucroBruto, despesasOperacionais, receitasOperacionais,
     lucroOperacionalContabil, receitasNaoOperacionais, resultadoAntesCsll, provisaoCsll, resultadoLiquido,
     depreciacao, linha209: l209, nfPosto, linha211: l211,
-    descontos2025, descontos2026, descontosPorComp,
+    descontos2025, descontos2026, descontosPorComp, personalizadas, ajustesPersonalizados,
     lucroOperacionalGerencial, lucroComSubvencoes, linha138: l138,
     faturamentoGerencial, lucratividadeContabil, lucratividadeGerencial, lucratividadeComSubvencoes,
   };
